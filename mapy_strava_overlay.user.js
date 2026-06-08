@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Mapy + Strava Heatmap Overlay
 // @namespace    mapy-strava-overlay
-// @version      0.7.0
+// @version      0.8.0
 // @description  Overlay Strava global heatmap or Waymarked Trails MTB/road route layers on mapy.com, switchable, while keeping Mapy controls.
 // @downloadURL  https://github.com/matejcermak/mapycz_strava/raw/refs/heads/main/mapy_strava_overlay.user.js
 // @updateURL    https://github.com/matejcermak/mapycz_strava/raw/refs/heads/main/mapy_strava_overlay.user.js
@@ -17,6 +17,7 @@
 // @connect      content-a.strava.com
 // @connect      content-b.strava.com
 // @connect      content-c.strava.com
+// @connect      personal-heatmaps-external.strava.com
 // @connect      strava.com
 // @connect      tile.waymarkedtrails.org
 // @connect      mapy.com
@@ -81,7 +82,11 @@
     // tile coords / sport_* token / color appear, e.g.:
     //   "https://personalized-heatmaps-external.strava.com/tiles/<ID>/{color}/{z}/{x}/{y}.png?filter_type={sport}&respect_privacy_zones=true&include_everyone=true&include_followers=true"
     // Until set, the K (personal) layer stays off with a hint.
-    const PERSONAL_HEAT_URL_TEMPLATE = "";
+    // 4568015 = Matěj's Strava athlete id (from his personal-heatmap requests).
+    const PERSONAL_HEAT_URL_TEMPLATE =
+        "https://personal-heatmaps-external.strava.com/tiles/4568015/{color}/{z}/{x}/{y}.png" +
+        "?missing=empty&filter_type={sport}&include_everyone=true&include_followers_only=true" +
+        "&include_only_me=true&respect_privacy_zones=false&include_commutes=false";
 
     const SPORT_ALIAS = {
         all: "all",
@@ -1158,17 +1163,18 @@
     }
 
     function gmRequest(details) {
+        // Returns the request handle (has .abort()) so stale tiles can be cancelled.
         if (typeof GM_xmlhttpRequest === "function") {
-            GM_xmlhttpRequest(details);
-            return;
+            return GM_xmlhttpRequest(details);
         }
         if (
             typeof GM === "object" &&
             typeof GM !== null &&
             typeof GM.xmlHttpRequest === "function"
         ) {
-            GM.xmlHttpRequest(details);
+            return GM.xmlHttpRequest(details);
         }
+        return null;
     }
 
     function clamp(value, min, max) {
@@ -1329,8 +1335,12 @@
         const sportToken = BIKE_SPORT_TOKEN[layer.sport] || BIKE_SPORT_TOKEN.mtb;
         if (layer.kind === "personal") {
             return {
-                urls: [buildPersonalHeatUrl(sportToken, PERSONAL_HEAT_COLOR, z, x, y)],
+                urls: [
+                    buildPersonalHeatUrl(sportToken, PERSONAL_HEAT_COLOR, z, x, y),
+                    buildPersonalHeatUrl(sportToken, "grayscale", z, x, y),
+                ],
                 needsCookies: true,
+                persist: false, // personal heat changes often -> session-cache only
             };
         }
         // Global: "hot" as requested, with a grayscale fallback per tile in case
@@ -1341,6 +1351,7 @@
                 buildContentHeatUrl(sportToken, "grayscale", z, x, y),
             ],
             needsCookies: true,
+            persist: true, // global heat rarely changes -> cache to IndexedDB
         };
     }
 
@@ -1389,6 +1400,117 @@
     // Kept for the debug panel; reflects what getTileFetchPlan would actually do.
     function getTileUrlCandidates(z, x, y) {
         return getTileFetchPlan(z, x, y).urls;
+    }
+
+    // --- Tile cache + request management ------------------------------------
+    // In-memory object-URL cache (instant within a session) + an IndexedDB cache
+    // for GLOBAL tiles so re-opening mapy is instant (global heat rarely changes;
+    // 30-day TTL). Personal tiles are memory-only (they update often). Stale
+    // in-flight requests from a superseded render are aborted so panning/
+    // switching stays snappy instead of piling up old tiles.
+    const MEM_TILE_CACHE_MAX = 4000;
+    const memTileCache = new Map(); // canonical url -> objectURL
+    const GLOBAL_TILE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+    let pendingTileRequests = [];
+
+    function abortStaleTileRequests() {
+        const reqs = pendingTileRequests;
+        pendingTileRequests = [];
+        for (const h of reqs) {
+            try {
+                if (h && typeof h.abort === "function") {
+                    h.abort();
+                }
+            } catch (_) {
+                // ignore
+            }
+        }
+    }
+
+    function memCacheGet(url) {
+        const v = memTileCache.get(url);
+        if (v) {
+            memTileCache.delete(url);
+            memTileCache.set(url, v); // LRU bump
+        }
+        return v || "";
+    }
+
+    function memCachePut(url, objectUrl) {
+        if (memTileCache.has(url)) {
+            return; // keep the existing object URL (already referenced by tiles)
+        }
+        memTileCache.set(url, objectUrl);
+        while (memTileCache.size > MEM_TILE_CACHE_MAX) {
+            const oldestKey = memTileCache.keys().next().value;
+            const oldestUrl = memTileCache.get(oldestKey);
+            memTileCache.delete(oldestKey);
+            try {
+                URL.revokeObjectURL(oldestUrl);
+            } catch (_) {
+                // ignore
+            }
+        }
+    }
+
+    const TILE_DB_NAME = "mapyStravaTileCache";
+    const TILE_DB_STORE = "tiles";
+    let tileDbPromise = null;
+
+    function openTileDb() {
+        if (tileDbPromise) {
+            return tileDbPromise;
+        }
+        tileDbPromise = new Promise((resolve) => {
+            let req;
+            try {
+                req = indexedDB.open(TILE_DB_NAME, 1);
+            } catch (_) {
+                resolve(null);
+                return;
+            }
+            req.onupgradeneeded = () => {
+                const db = req.result;
+                if (!db.objectStoreNames.contains(TILE_DB_STORE)) {
+                    db.createObjectStore(TILE_DB_STORE);
+                }
+            };
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => resolve(null);
+        });
+        return tileDbPromise;
+    }
+
+    async function idbGetTile(url) {
+        try {
+            const db = await openTileDb();
+            if (!db) {
+                return null;
+            }
+            return await new Promise((resolve) => {
+                const tx = db.transaction(TILE_DB_STORE, "readonly");
+                const r = tx.objectStore(TILE_DB_STORE).get(url);
+                r.onsuccess = () => resolve(r.result || null);
+                r.onerror = () => resolve(null);
+            });
+        } catch (_) {
+            return null;
+        }
+    }
+
+    function idbPutTile(url, blob) {
+        (async () => {
+            try {
+                const db = await openTileDb();
+                if (!db) {
+                    return;
+                }
+                const tx = db.transaction(TILE_DB_STORE, "readwrite");
+                tx.objectStore(TILE_DB_STORE).put({ blob, ts: Date.now() }, url);
+            } catch (_) {
+                // best-effort cache; ignore failures
+            }
+        })();
     }
 
     function setTileSourceFromPlan(img, plan, tileRenderSeq) {
@@ -1442,9 +1564,26 @@
             return;
         }
 
-        // Slow path: cookies required (Strava /tiles-auth/). Use GM_xmlhttpRequest
-        // so cross-origin cookies actually get sent.
+        // Cookie path (Strava heatmap): caches first, then GM_xmlhttpRequest so
+        // cross-origin .strava.com cookies are sent.
         if (CAN_USE_GM_REQUEST) {
+            const primary = candidates[0];
+
+            // 1. In-memory cache -> instant, no network.
+            const mem = memCacheGet(primary);
+            if (mem) {
+                debugStats.gmFetchedOk += 1;
+                if (debugStats.current.renderSeq === tileRenderSeq) {
+                    debugStats.current.gmOk += 1;
+                    if (!debugStats.current.okUrl) {
+                        debugStats.current.okUrl = `mem:${primary}`;
+                    }
+                }
+                img.src = mem;
+                updateDebugPanel();
+                return;
+            }
+
             let index = 0;
             const tryNextViaGm = () => {
                 if (index >= candidates.length) {
@@ -1460,7 +1599,7 @@
                 const candidate = candidates[index];
                 index += 1;
 
-                gmRequest({
+                const handle = gmRequest({
                     method: "GET",
                     url: candidate,
                     responseType: "blob",
@@ -1498,7 +1637,12 @@
                                 }
                             }
                             const blobUrl = URL.createObjectURL(blob);
-                            img.dataset.blobUrl = blobUrl;
+                            // Cache under the canonical (primary) url so future
+                            // renders hit even if a fallback color was used.
+                            memCachePut(primary, blobUrl);
+                            if (plan.persist) {
+                                idbPutTile(primary, blob);
+                            }
                             img.src = blobUrl;
                             updateDebugPanel();
                             return;
@@ -1542,8 +1686,37 @@
                         tryNextViaGm();
                     },
                 });
+                if (handle) {
+                    pendingTileRequests.push(handle);
+                }
             };
-            tryNextViaGm();
+
+            // 2. Persisted (global) tiles: check IndexedDB before the network.
+            if (plan.persist) {
+                (async () => {
+                    const hit = await idbGetTile(primary);
+                    if (tileRenderSeq !== renderSeq) {
+                        return; // a newer render superseded this tile
+                    }
+                    if (hit && hit.blob && Date.now() - (hit.ts || 0) < GLOBAL_TILE_TTL_MS) {
+                        const objectUrl = URL.createObjectURL(hit.blob);
+                        memCachePut(primary, objectUrl);
+                        debugStats.gmFetchedOk += 1;
+                        if (debugStats.current.renderSeq === tileRenderSeq) {
+                            debugStats.current.gmOk += 1;
+                            if (!debugStats.current.okUrl) {
+                                debugStats.current.okUrl = `idb:${primary}`;
+                            }
+                        }
+                        img.src = objectUrl;
+                        updateDebugPanel();
+                        return;
+                    }
+                    tryNextViaGm();
+                })();
+            } else {
+                tryNextViaGm();
+            }
             return;
         }
 
@@ -1693,6 +1866,10 @@
             lastUrl: "",
             okUrl: "",
         };
+
+        // A new render supersedes the previous one: cancel its in-flight tile
+        // requests so they stop competing for the GM_xmlhttpRequest pool.
+        abortStaleTileRequests();
 
         const mapRect = getMapViewportRect();
         const width = mapRect.width;

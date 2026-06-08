@@ -32,8 +32,7 @@ heatmap (`K`) — that can be shown together (personal blue on top of global hot
   **MTB** (hot) → **Road** (hot) → **off**.
 - `K` — toggle your **personal** heatmap on/off (blue). Its sport follows `J`
   (MTB global → MTB personal, Road global → Road personal); when global is off it
-  uses the last bike sport you looked at. Needs `PERSONAL_HEAT_URL_TEMPLATE` set
-  (see below).
+  uses the last bike sport you looked at.
 - `G` — toggle Mapy base map between aerial (satellite) and outdoor/tourist
 - `[` / `]` — decrease / increase opacity in 10% steps
 - `Alt + D` — toggle debug panel
@@ -48,7 +47,7 @@ hotkey). Waymarked Trails route layers were removed.
 | Layer | URL pattern | Max zoom | Auth |
 | --- | --- | --- | --- |
 | Global per-sport heatmap (`J`) | `content-a.strava.com/identified/globalheat/sport_{MountainBikeRide,Ride}/hot/{z}/{x}/{y}.png?v=19&missing=empty` | ~15 | CloudFront **cookie** (logged-in `.strava.com`, via `GM_xmlhttpRequest`) |
-| Personal heatmap (`K`) | from `PERSONAL_HEAT_URL_TEMPLATE` (your account's tile URL) | — | CloudFront **cookie** |
+| Personal heatmap (`K`) | `personal-heatmaps-external.strava.com/tiles/<athleteId>/blue/{z}/{x}/{y}.png?...&filter_type=sport_{MountainBikeRide,Ride}&...` | ~15 | CloudFront **cookie** |
 
 The **global per-sport heatmap** is the endpoint the Strava web app itself uses,
 and — unlike the public `heatmap-external/.../ride/...` tiles — it **separates
@@ -59,17 +58,34 @@ cookies. No query-string signature or capture step is involved.
 
 ### Personal heatmap setup
 
-The personal heatmap tile URL contains your account's athlete id, so it can't be
-hardcoded generically. To enable `K`:
+The personal heatmap tile URL contains your **athlete id**, so it's baked into
+`PERSONAL_HEAT_URL_TEMPLATE` near the top of the script (currently Matěj's,
+`4568015`). To use a different account, open your personal heatmap on Strava
+(`https://www.strava.com/maps/personal-heatmap`, logged in), grab a tile URL from
+DevTools → Network, and swap the athlete id / template in. Placeholders `{z}`
+`{x}` `{y}` `{sport}` `{color}` are substituted at render time (`{sport}` =
+`sport_MountainBikeRide` / `sport_Ride`, `{color}` = `blue`).
 
-1. Open your personal heatmap on Strava (`https://www.strava.com/maps/personal-heatmap`),
-   logged in, and set the activity-type filter (e.g. Mountain Bike Ride).
-2. DevTools → Network, find a personal-heatmap tile request, copy its URL.
-3. Put it in `PERSONAL_HEAT_URL_TEMPLATE` near the top of the script, replacing
-   the tile coords / sport / color with placeholders `{z}` `{x}` `{y}` `{sport}`
-   `{color}` — e.g.
-   `https://personalized-heatmaps-external.strava.com/tiles/<ID>/{color}/{z}/{x}/{y}.png?filter_type={sport}&...`
-   (`{sport}` is the `sport_MountainBikeRide` / `sport_Ride` token; `{color}` is `blue`).
+### Caching & performance
+
+Tiles are cached so panning/switching/reopening is fast instead of re-fetching
+every tile through the (rate-limited) cookie path:
+
+- **In-memory** object-URL cache (this session) — switching `J`/`K` or panning
+  back is instant.
+- **IndexedDB** cache for **global** tiles (`mapyStravaTileCache`, 30-day TTL) —
+  re-opening mapy renders cached areas immediately, no network. This is lazy
+  "pre-download": whatever you look at is cached and stays fast. Personal tiles
+  are **not** persisted (they change often) — memory-only for the session.
+- **Stale-request abort** — when a render is superseded (you panned or toggled),
+  its in-flight tile requests are cancelled so they stop clogging the request
+  pool, which is what made old tiles keep trickling in.
+
+Global heat barely changes, so the 30-day TTL is fine; bump
+`GLOBAL_TILE_TTL_MS` to refresh more/less often. (A full bulk "download all of
+Czechia" prefetch is intentionally avoided — at useful zoom it's thousands of
+tiles per sport; the lazy IndexedDB cache gives the same instant feel for the
+areas you actually browse.)
 
 ### Auth — it just needs your logged-in Strava cookies
 
