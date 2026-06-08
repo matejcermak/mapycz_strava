@@ -1,8 +1,10 @@
 // ==UserScript==
 // @name         Mapy + Strava Heatmap Overlay
 // @namespace    mapy-strava-overlay
-// @version      0.2.0
-// @description  Overlay Strava global heatmap on mapy.com while keeping Mapy controls.
+// @version      0.5.1
+// @description  Overlay Strava global heatmap or Waymarked Trails MTB/road route layers on mapy.com, switchable, while keeping Mapy controls.
+// @downloadURL  https://github.com/matejcermak/mapycz_strava/raw/refs/heads/main/mapy_strava_overlay.user.js
+// @updateURL    https://github.com/matejcermak/mapycz_strava/raw/refs/heads/main/mapy_strava_overlay.user.js
 // @match        https://mapy.com/*
 // @match        https://www.strava.com/maps/*
 // @match        https://ridewithgps.com/*
@@ -12,6 +14,7 @@
 // @connect      heatmap-external-a.strava.com
 // @connect      heatmap-external-b.strava.com
 // @connect      heatmap-external-c.strava.com
+// @connect      tile.waymarkedtrails.org
 // @connect      mapy.com
 // @connect      ridewithgps.com
 // ==/UserScript==
@@ -24,6 +27,11 @@
         sport: "MountainBikeRide",
         gColor: "hot",
         gOpacity: 100,
+        // "strava-ride" = Strava global heatmap (all ride sub-disciplines aggregated; popularity)
+        // "mtb-routes"  = Waymarked Trails MTB route overlay (OSM-based, free, hi-res)
+        // "road-routes" = Waymarked Trails cycling/road route overlay (OSM-based, free, hi-res)
+        // The J hotkey cycles through SOURCES in order.
+        source: "strava-ride",
     };
     let lastNonMobileBlueColor = FILTERS.gColor;
 
@@ -35,12 +43,14 @@
     const MIN_ZOOM = 0;
     // Mapy can go beyond 16; keep this high so scaling stays correct.
     const MAX_ZOOM = 22;
-    // Strava heatmap tiles are available only up to this zoom level (z=11).
-    // Always request tiles at or below this zoom and scale them up for higher
-    // Mapy zooms.
-    const MAX_PUBLIC_TILE_ZOOM = 11;
+    // Strava public /tiles/ stop at z=11. /tiles-auth/ (signed cookies) goes to z=15.
+    // Waymarked Trails MTB tiles go to z=18.
+    const STRAVA_MAX_PUBLIC_ZOOM = 11;
+    const STRAVA_MAX_AUTH_ZOOM = 15;
+    const WMT_MAX_ZOOM = 18;
     const BASE_PATH_PUBLIC = "tiles";
     const BASE_PATH_AUTH = "tiles-auth";
+    const TILE_FETCH_TIMEOUT_MS = 3500;
 
     const SPORT_ALIAS = {
         all: "all",
@@ -108,6 +118,7 @@
         },
     };
 
+    const STORAGE_KEY_SOURCE = "mapyStravaActiveSource";
     const STORAGE_KEY_AUTH = "stravaHeatmapAuthQuery";
     const STORAGE_KEY_AUTH_TS = "stravaHeatmapAuthTimestamp";
     const STORAGE_KEY_MAPY_LAST_GPX_EXPORT_URL = "mapyLastGpxExportUrl";
@@ -850,7 +861,210 @@
         gmSetValue(STORAGE_KEY_AUTH, authQuery);
         gmSetValue(STORAGE_KEY_AUTH_TS, String(Date.now()));
         debugStats.lastCapturedAuthUrl = urlText;
+        // Newly captured: blow away tile cache so we re-render with auth.
+        lastStateKey = "";
+        requestRender();
         return true;
+    }
+
+    // --- Background Strava auth refresh -------------------------------------
+    // When tiles-auth starts 403ing (signed URL/cookie expired), we briefly
+    // load the Strava heatmap page in a hidden iframe. Our @match covers
+    // strava.com, so the same userscript instance runs in the iframe and
+    // captures a fresh signed query into GM storage.
+    let authFailureCount = 0;
+    let lastAuthFailureAt = 0;
+    let authRefreshInFlight = false;
+    let lastAuthRefreshAt = 0;
+    const AUTH_REFRESH_COOLDOWN_MS = 90 * 1000;
+    const AUTH_REFRESH_FAIL_THRESHOLD = 3;
+
+    // --- Cookie-based Strava auth ------------------------------------------
+    // Modern Strava heatmap auth is CloudFront *signed cookies* (set on
+    // .strava.com when you open the heatmap page while logged in), NOT a signed
+    // query string. There's nothing to "capture" from tile URLs anymore, so we
+    // probe instead: fire one credentialed request at a tiles-auth tile and see
+    // whether the browser's cookies make it return an image. If so, we can pull
+    // z>11 tiles through the GM cookie path with no query string at all.
+    let stravaCookieAuthOk = false;
+    let stravaCookieProbeInFlight = false;
+    let lastStravaCookieProbeAt = 0;
+    const STRAVA_COOKIE_PROBE_COOLDOWN_MS = 60 * 1000;
+
+    function stravaAuthAvailable() {
+        return !!getActiveAuthQuery() || stravaCookieAuthOk;
+    }
+
+    function probeStravaCookieAuth(force) {
+        // Needs GM_xmlhttpRequest to send cross-origin cookies to the heatmap
+        // domain; a plain <img> on mapy.com can't (third-party cookies).
+        if (!CAN_USE_GM_REQUEST || getActiveSource() !== "strava-ride") {
+            return;
+        }
+        if (stravaCookieProbeInFlight) {
+            return;
+        }
+        const now = Date.now();
+        if (!force && now - lastStravaCookieProbeAt < STRAVA_COOKIE_PROBE_COOLDOWN_MS) {
+            return;
+        }
+        lastStravaCookieProbeAt = now;
+        stravaCookieProbeInFlight = true;
+        const notifyOnFail = !!force;
+        // Any in-range tile works; we only care about the HTTP status. z=12 is
+        // the first zoom that requires auth (public tiles stop at 11).
+        const url = buildStravaTileUrl(BASE_PATH_AUTH, 12, 2234, 1400, false);
+        gmRequest({
+            method: "GET",
+            url,
+            responseType: "blob",
+            timeout: TILE_FETCH_TIMEOUT_MS,
+            withCredentials: true,
+            anonymous: false,
+            headers: {
+                Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+            },
+            onload: (response) => {
+                stravaCookieProbeInFlight = false;
+                const blob = response.response;
+                const ok =
+                    response.status >= 200 &&
+                    response.status < 300 &&
+                    blob &&
+                    typeof blob.type === "string" &&
+                    blob.type.startsWith("image/");
+                const changed = stravaCookieAuthOk !== !!ok;
+                stravaCookieAuthOk = !!ok;
+                logAutomation(`cookie probe: ${response.status} -> auth ${ok ? "ok" : "no"}`);
+                if (!ok && response.status === 403 && notifyOnFail) {
+                    showNotice(
+                        "Strava heatmap needs auth for z>11.\n" +
+                        "Open https://www.strava.com/maps/global-heatmap in a tab (logged in),\n" +
+                        "pan once, then reload this page."
+                    );
+                }
+                if (changed) {
+                    lastStateKey = "";
+                    requestRender();
+                }
+                updateDebugPanel();
+            },
+            onerror: () => {
+                stravaCookieProbeInFlight = false;
+                logAutomation("cookie probe: network error");
+                updateDebugPanel();
+            },
+            ontimeout: () => {
+                stravaCookieProbeInFlight = false;
+                logAutomation("cookie probe: timeout");
+                updateDebugPanel();
+            },
+        });
+    }
+
+    function noteAuthTileFailure() {
+        const now = Date.now();
+        // Reset the counter if failures are sparse.
+        if (now - lastAuthFailureAt > 8000) {
+            authFailureCount = 0;
+        }
+        lastAuthFailureAt = now;
+        authFailureCount += 1;
+        if (authFailureCount >= AUTH_REFRESH_FAIL_THRESHOLD) {
+            authFailureCount = 0;
+            // Cookies likely expired mid-session: mark stale and re-probe.
+            stravaCookieAuthOk = false;
+            probeStravaCookieAuth(true);
+        }
+    }
+
+    function tryRefreshStravaAuth() {
+        if (authRefreshInFlight) {
+            return;
+        }
+        const now = Date.now();
+        if (now - lastAuthRefreshAt < AUTH_REFRESH_COOLDOWN_MS) {
+            return;
+        }
+        lastAuthRefreshAt = now;
+        authRefreshInFlight = true;
+        logAutomation("auth: refreshing via hidden iframe");
+        showNotice("Refreshing Strava heatmap auth...");
+
+        let iframe;
+        let timeoutId;
+        let pollId;
+        const initialAuth = String(gmGetValue(STORAGE_KEY_AUTH, "") || "");
+        const initialAuthTs = String(gmGetValue(STORAGE_KEY_AUTH_TS, "") || "");
+
+        const cleanup = (note) => {
+            authRefreshInFlight = false;
+            if (pollId) {
+                window.clearInterval(pollId);
+                pollId = null;
+            }
+            if (timeoutId) {
+                window.clearTimeout(timeoutId);
+                timeoutId = null;
+            }
+            if (iframe && iframe.parentNode) {
+                iframe.parentNode.removeChild(iframe);
+            }
+            iframe = null;
+            if (note) {
+                logAutomation(`auth: ${note}`);
+            }
+        };
+
+        try {
+            iframe = document.createElement("iframe");
+            iframe.src = "https://www.strava.com/maps/global-heatmap";
+            // Hidden but rendered (display:none can suppress resource loading).
+            Object.assign(iframe.style, {
+                position: "fixed",
+                left: "-10000px",
+                top: "0",
+                width: "1024px",
+                height: "768px",
+                opacity: "0",
+                pointerEvents: "none",
+                border: "0",
+            });
+            iframe.setAttribute("aria-hidden", "true");
+            iframe.setAttribute("tabindex", "-1");
+            document.body.appendChild(iframe);
+        } catch (err) {
+            cleanup(`iframe create failed: ${shortText(err && err.message ? err.message : err, 60)}`);
+            showNotice(
+                "Couldn't open Strava in background.\n" +
+                "Open https://www.strava.com/maps/global-heatmap once to refresh auth."
+            );
+            return;
+        }
+
+        // Poll for storage change instead of trying to read iframe DOM
+        // (cross-origin). Auth-capture in the iframe writes via gmSetValue.
+        pollId = window.setInterval(() => {
+            const nowAuth = String(gmGetValue(STORAGE_KEY_AUTH, "") || "");
+            const nowAuthTs = String(gmGetValue(STORAGE_KEY_AUTH_TS, "") || "");
+            if (nowAuth && (nowAuth !== initialAuth || nowAuthTs !== initialAuthTs)) {
+                cleanup("captured fresh auth via iframe");
+                showNotice("Strava auth refreshed.");
+                lastStateKey = "";
+                requestRender();
+            }
+        }, 750);
+
+        // Give the iframe up to 25s. If Strava's page hasn't shipped a signed
+        // tile request by then, almost certainly it's blocked (X-Frame-Options
+        // changed) or the user isn't logged in.
+        timeoutId = window.setTimeout(() => {
+            cleanup("iframe refresh timed out");
+            showNotice(
+                "Couldn't refresh Strava auth in background.\n" +
+                "Open https://www.strava.com/maps/global-heatmap once (logged in) to refresh."
+            );
+        }, 25000);
     }
 
     function installStravaAuthCapture() {
@@ -1019,28 +1233,76 @@
         return [primary];
     }
 
-    function getTileUrlCandidates(z, x, y) {
-        const subdomain = TILE_SUBDOMAINS[Math.abs(x + y) % TILE_SUBDOMAINS.length];
-        const sportSlug = getSportSlug();
-        const colorCandidates = getColorCandidates();
-        const worldSize = Math.pow(2, z);
-        const wrappedX = ((x % worldSize) + worldSize) % worldSize;
+    // Ordered list the J hotkey cycles through.
+    const SOURCES = ["strava-ride", "mtb-routes", "road-routes"];
 
-        const authQuery = getActiveAuthQuery();
-        const urls = [];
-        for (const basePath of getBasePathCandidates()) {
-            for (const colorSlug of colorCandidates) {
-                urls.push(
-                    `https://heatmap-external-${subdomain}.strava.com/${basePath}/` +
-                    `${sportSlug}/${colorSlug}/${z}/${wrappedX}/${y}.png` +
-                    `${authQuery}`
-                );
-            }
-        }
-        return urls;
+    function getActiveSource() {
+        const s = String(FILTERS.source || "strava-ride").toLowerCase();
+        return SOURCES.includes(s) ? s : "strava-ride";
     }
 
-    function setTileSourceWithFallback(img, candidates, tileRenderSeq) {
+    function isWmtRouteSource(src) {
+        return src === "mtb-routes" || src === "road-routes";
+    }
+
+    function getMaxTileZoomForSource() {
+        if (isWmtRouteSource(getActiveSource())) {
+            return WMT_MAX_ZOOM;
+        }
+        return stravaAuthAvailable() ? STRAVA_MAX_AUTH_ZOOM : STRAVA_MAX_PUBLIC_ZOOM;
+    }
+
+    function buildStravaTileUrl(basePath, z, x, y, includeAuth) {
+        const subdomain = TILE_SUBDOMAINS[Math.abs(x + y) % TILE_SUBDOMAINS.length];
+        const sportSlug = getSportSlug();
+        const colorSlug = getColorCandidates()[0];
+        const worldSize = Math.pow(2, z);
+        const wrappedX = ((x % worldSize) + worldSize) % worldSize;
+        const authQuery = includeAuth ? getActiveAuthQuery() : "";
+        return `https://heatmap-external-${subdomain}.strava.com/${basePath}/` +
+            `${sportSlug}/${colorSlug}/${z}/${wrappedX}/${y}.png${authQuery}`;
+    }
+
+    // theme: "mtb" (mountain bike routes) or "cycling" (road/touring cycle routes).
+    function buildWmtTileUrl(theme, z, x, y) {
+        const worldSize = Math.pow(2, z);
+        const wrappedX = ((x % worldSize) + worldSize) % worldSize;
+        return `https://tile.waymarkedtrails.org/${theme}/${z}/${wrappedX}/${y}.png`;
+    }
+
+    // Returns { urls: string[], needsCookies: boolean } so the fetcher can
+    // choose direct <img> (fast, no GM round-trip) vs GM_xmlhttpRequest (cookies).
+    function getTileFetchPlan(z, x, y) {
+        const source = getActiveSource();
+        if (source === "mtb-routes") {
+            return { urls: [buildWmtTileUrl("mtb", z, x, y)], needsCookies: false };
+        }
+        if (source === "road-routes") {
+            return { urls: [buildWmtTileUrl("cycling", z, x, y)], needsCookies: false };
+        }
+        // Strava ride heatmap.
+        const authAvailable = stravaAuthAvailable();
+        if (z > STRAVA_MAX_PUBLIC_ZOOM) {
+            // Public would 404 here. Only the auth path makes sense.
+            if (!authAvailable) {
+                // No auth yet -> fall back to public (blank above z11, but the
+                // cookie probe runs elsewhere and unlocks z>11 once it succeeds).
+                return { urls: [buildStravaTileUrl(BASE_PATH_PUBLIC, z, x, y, false)], needsCookies: false };
+            }
+            // includeAuth=true appends the captured query string if we have one;
+            // in cookie mode it's empty and the GM request carries cookies.
+            return { urls: [buildStravaTileUrl(BASE_PATH_AUTH, z, x, y, true)], needsCookies: true };
+        }
+        // z <= 11: public is faster and reliable. Skip auth path entirely.
+        return { urls: [buildStravaTileUrl(BASE_PATH_PUBLIC, z, x, y, false)], needsCookies: false };
+    }
+
+    // Kept for the debug panel; reflects what getTileFetchPlan would actually do.
+    function getTileUrlCandidates(z, x, y) {
+        return getTileFetchPlan(z, x, y).urls;
+    }
+
+    function setTileSourceFromPlan(img, plan, tileRenderSeq) {
         // Track basic load/error behavior (useful when tiles fetch OK but don't render).
         debugStats.tilesCreated += 1;
         if (debugStats.current.renderSeq === tileRenderSeq) {
@@ -1058,6 +1320,10 @@
             if (debugStats.current.renderSeq === tileRenderSeq) {
                 debugStats.current.tilesErrored += 1;
             }
+            // For Strava auth tiles, repeated errors trigger a background re-auth.
+            if (plan.needsCookies) {
+                noteAuthTileFailure();
+            }
             updateDebugPanel();
         });
 
@@ -1067,6 +1333,28 @@
             delete img.dataset.blobUrl;
         }
 
+        const candidates = plan.urls;
+
+        // Fast path: when no cookies are needed, just point <img> at the URL.
+        // Browser HTTP/2 + cache + connection coalescing makes this far faster
+        // than going through GM_xmlhttpRequest (which has stricter concurrency).
+        if (!plan.needsCookies) {
+            let index = 0;
+            const tryNext = () => {
+                if (index >= candidates.length) {
+                    img.removeEventListener("error", tryNext);
+                    return;
+                }
+                img.src = candidates[index];
+                index += 1;
+            };
+            img.addEventListener("error", tryNext);
+            tryNext();
+            return;
+        }
+
+        // Slow path: cookies required (Strava /tiles-auth/). Use GM_xmlhttpRequest
+        // so cross-origin cookies actually get sent.
         if (CAN_USE_GM_REQUEST) {
             let index = 0;
             const tryNextViaGm = () => {
@@ -1076,9 +1364,6 @@
                     if (debugStats.current.renderSeq === tileRenderSeq) {
                         debugStats.current.gmFail += 1;
                         debugStats.current.lastStatus = "exhausted";
-                    }
-                    if (debugStats.lastGmStatusBeforeExhausted) {
-                        // keep previous
                     }
                     updateDebugPanel();
                     return;
@@ -1090,9 +1375,7 @@
                     method: "GET",
                     url: candidate,
                     responseType: "blob",
-                    timeout: 8000,
-                    // Important: Strava may require signed cookies for higher zoom tiles.
-                    // GM requests do not always include cookies unless explicitly enabled.
+                    timeout: TILE_FETCH_TIMEOUT_MS,
                     withCredentials: true,
                     anonymous: false,
                     headers: {
@@ -1129,6 +1412,10 @@
                         if (debugStats.current.renderSeq === tileRenderSeq) {
                             debugStats.current.gmFail += 1;
                         }
+                        // 403 on tiles-auth means the signed cookie/query expired.
+                        if (response.status === 401 || response.status === 403) {
+                            noteAuthTileFailure();
+                        }
                         updateDebugPanel();
                         tryNextViaGm();
                     },
@@ -1142,6 +1429,7 @@
                             debugStats.current.lastUrl = candidate;
                             debugStats.current.lastStatus = "error";
                         }
+                        noteAuthTileFailure();
                         updateDebugPanel();
                         tryNextViaGm();
                     },
@@ -1164,8 +1452,9 @@
             return;
         }
 
+        // Last resort: no GM_xmlhttpRequest and we need cookies. Direct img.src
+        // will at least carry session cookies on same-site requests.
         let index = 0;
-
         const tryNext = () => {
             if (index >= candidates.length) {
                 img.removeEventListener("error", tryNext);
@@ -1174,7 +1463,6 @@
             img.src = candidates[index];
             index += 1;
         };
-
         img.addEventListener("error", tryNext);
         tryNext();
     }
@@ -1261,7 +1549,7 @@
             `state=${state ? `${state.zoom.toFixed(3)} / ${state.lat.toFixed(5)} / ${state.lon.toFixed(5)}` : "null"}`,
             `viewport=${window.innerWidth}x${window.innerHeight} mapRect=${Math.round(mapRect.width)}x${Math.round(mapRect.height)}@${Math.round(mapRect.left)},${Math.round(mapRect.top)}`,
             `filters sport=${String(FILTERS.sport)} tileSport=${getSportSlug()} color=${String(FILTERS.gColor)} opacity=${FILTERS.gOpacity}`,
-            `tileZoomPolicy maxTileZoom=${MAX_PUBLIC_TILE_ZOOM} (always capped)`,
+            `source=${getActiveSource()} maxTileZoom=${getMaxTileZoomForSource()} (authQuery=${getActiveAuthQuery() ? "yes" : "no"} cookieAuth=${stravaCookieAuthOk ? "yes" : "no"} probing=${stravaCookieProbeInFlight ? "yes" : "no"})`,
             [authStatus, authAge].filter(Boolean).join(" "),
             `tiles created=${debugStats.tilesCreated} loaded=${debugStats.tilesLoaded} errored=${debugStats.tilesErrored}`,
             `gm ok=${debugStats.gmFetchedOk} fail=${debugStats.gmFetchedFail} last=${debugStats.lastGmStatus} prev=${debugStats.lastGmStatusBeforeExhausted}`,
@@ -1304,8 +1592,21 @@
         const zoomFloat = clamp(state.zoom, MIN_ZOOM, MAX_ZOOM);
         const desiredTileZoom = Math.floor(zoomFloat);
 
-        // Strava does not return tiles above z=11, so always cap and scale.
-        const tileZoom = Math.min(desiredTileZoom, MAX_PUBLIC_TILE_ZOOM);
+        // Per-source max zoom: Strava public z<=11, Strava auth z<=15, WMT MTB z<=18.
+        // Above the cap, scale fewer big tiles up; at or below it, request the
+        // matching native zoom for crispness.
+        const tileZoom = Math.min(desiredTileZoom, getMaxTileZoomForSource());
+
+        // If the user is zoomed past the public cap on Strava and we have no
+        // auth captured, we'd just be pixelated z=11 tiles. Try to grab auth
+        // in the background so the next render can use /tiles-auth/ at z>11.
+        if (
+            getActiveSource() === "strava-ride" &&
+            desiredTileZoom > STRAVA_MAX_PUBLIC_ZOOM &&
+            !stravaAuthAvailable()
+        ) {
+            probeStravaCookieAuth();
+        }
 
         const scale = Math.pow(2, zoomFloat - tileZoom);
 
@@ -1346,7 +1647,7 @@
                 if (debugEnabled) {
                     img.style.outline = "1px solid rgba(255,0,0,0.35)";
                 }
-                setTileSourceWithFallback(img, getTileUrlCandidates(tileZoom, tx, ty), renderSeq);
+                setTileSourceFromPlan(img, getTileFetchPlan(tileZoom, tx, ty), renderSeq);
                 tileLayer.appendChild(img);
             }
         }
@@ -1477,6 +1778,62 @@
                 }
             };
 
+            const toggleMapySet = () => {
+                const container =
+                    document.querySelector("mapy-mapmenu-mapset-options") ||
+                    document.querySelector("[class*='mapmenu-mapset-options']");
+                if (!container) {
+                    updateDebugPanel("mapset options not found");
+                    return;
+                }
+                const root = container.shadowRoot || container;
+                const options = Array.from(
+                    root.querySelectorAll(
+                        "[data-mapset], [data-id], button, [role='button'], li, a"
+                    )
+                );
+                const matches = (el, patterns) => {
+                    const hay = [
+                        el.getAttribute && el.getAttribute("data-mapset"),
+                        el.getAttribute && el.getAttribute("data-id"),
+                        el.getAttribute && el.getAttribute("title"),
+                        el.getAttribute && el.getAttribute("aria-label"),
+                        el.textContent,
+                    ]
+                        .filter(Boolean)
+                        .join(" ")
+                        .toLowerCase();
+                    return patterns.some((p) => hay.includes(p));
+                };
+                const aerial = options.find((el) =>
+                    matches(el, ["letecká", "letecka", "aerial", "satellite", "ophoto"])
+                );
+                const outdoor = options.find((el) =>
+                    matches(el, ["turistická", "turisticka", "outdoor", "hiking", "tourist"])
+                );
+                if (!aerial || !outdoor) {
+                    updateDebugPanel("aerial/outdoor option not found");
+                    return;
+                }
+                const isActive = (el) => {
+                    const cls = (el.className && el.className.baseVal) || el.className || "";
+                    const aria = el.getAttribute && el.getAttribute("aria-checked");
+                    const sel = el.getAttribute && el.getAttribute("aria-selected");
+                    return (
+                        /\b(active|selected|is-active|is-selected)\b/i.test(String(cls)) ||
+                        aria === "true" ||
+                        sel === "true"
+                    );
+                };
+                const target = isActive(aerial) ? outdoor : aerial;
+                target.dispatchEvent(
+                    new MouseEvent("click", { bubbles: true, cancelable: true, view: window })
+                );
+                updateDebugPanel(
+                    `mapset toggled to ${target === aerial ? "aerial" : "outdoor"}`
+                );
+            };
+
             const togglePanorama = () => {
                 const el =
                     document.querySelector("mapy-map-toggle.map-controls__panorama") ||
@@ -1501,14 +1858,29 @@
             }
             if (key.toLowerCase() === "g") {
                 consume();
-                FILTERS.sport = FILTERS.sport === "MountainBikeRide" ? "Ride" : "MountainBikeRide";
-                // Force a redraw even if map state didn't change.
-                lastStateKey = "";
-                updateDebugPanel(`sport toggled to ${FILTERS.sport}`);
-                requestRender();
+                toggleMapySet();
                 return;
             }
             if (key.toLowerCase() === "j") {
+                consume();
+                const idx = SOURCES.indexOf(getActiveSource());
+                FILTERS.source = SOURCES[(idx + 1) % SOURCES.length];
+                gmSetValue(STORAGE_KEY_SOURCE, FILTERS.source);
+                if (FILTERS.source === "strava-ride") {
+                    probeStravaCookieAuth(true);
+                }
+                lastStateKey = "";
+                const labels = {
+                    "strava-ride": `Strava ride heatmap — all bikes, popularity (z≤${getMaxTileZoomForSource()})`,
+                    "mtb-routes": "Waymarked Trails — MTB routes (z≤18)",
+                    "road-routes": "Waymarked Trails — road/cycling routes (z≤18)",
+                };
+                showNotice(`Source: ${labels[FILTERS.source] || FILTERS.source}`);
+                updateDebugPanel(`source toggled to ${FILTERS.source}`);
+                requestRender();
+                return;
+            }
+            if (key.toLowerCase() === "m") {
                 consume();
                 const current = String(FILTERS.gColor || "hot");
                 if (current.toLowerCase() === "mobileblue") {
@@ -1517,7 +1889,6 @@
                     lastNonMobileBlueColor = current || "hot";
                     FILTERS.gColor = "mobileblue";
                 }
-                // Force a redraw even if map state didn't change.
                 lastStateKey = "";
                 updateDebugPanel(`color toggled to ${FILTERS.gColor}`);
                 requestRender();
@@ -1577,9 +1948,15 @@
             installRideWithGpsUpload();
             return;
         }
+        // Restore the last source picked with J so it survives reloads.
+        FILTERS.source = String(
+            gmGetValue(STORAGE_KEY_SOURCE, FILTERS.source) || FILTERS.source
+        ).toLowerCase();
         installObservers();
         installMapyExportCapture();
         installHotkeys();
+        // Probe cookie auth at startup so z>11 unlocks without any capture step.
+        probeStravaCookieAuth(true);
         requestRender();
     }
 
