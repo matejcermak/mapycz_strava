@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Mapy + Strava Heatmap Overlay
 // @namespace    mapy-strava-overlay
-// @version      0.5.1
+// @version      0.6.0
 // @description  Overlay Strava global heatmap or Waymarked Trails MTB/road route layers on mapy.com, switchable, while keeping Mapy controls.
 // @downloadURL  https://github.com/matejcermak/mapycz_strava/raw/refs/heads/main/mapy_strava_overlay.user.js
 // @updateURL    https://github.com/matejcermak/mapycz_strava/raw/refs/heads/main/mapy_strava_overlay.user.js
@@ -14,6 +14,10 @@
 // @connect      heatmap-external-a.strava.com
 // @connect      heatmap-external-b.strava.com
 // @connect      heatmap-external-c.strava.com
+// @connect      content-a.strava.com
+// @connect      content-b.strava.com
+// @connect      content-c.strava.com
+// @connect      strava.com
 // @connect      tile.waymarkedtrails.org
 // @connect      mapy.com
 // @connect      ridewithgps.com
@@ -25,15 +29,18 @@
     // Defaults copied from your Strava URL request.
     const FILTERS = {
         sport: "MountainBikeRide",
-        gColor: "hot",
+        // Color for the content.strava.com per-sport heatmap. "grayscale" is the
+        // one we know is valid (it's what the web app requests); M cycles others.
+        gColor: "grayscale",
         gOpacity: 100,
-        // "strava-ride" = Strava global heatmap (all ride sub-disciplines aggregated; popularity)
-        // "mtb-routes"  = Waymarked Trails MTB route overlay (OSM-based, free, hi-res)
-        // "road-routes" = Waymarked Trails cycling/road route overlay (OSM-based, free, hi-res)
-        // The J hotkey cycles through SOURCES in order.
-        source: "strava-ride",
+        // SOURCES (cycled by J):
+        // "strava-road"   = content.strava.com per-sport heatmap, sport_Ride (road)
+        // "strava-mtb"    = content.strava.com per-sport heatmap, sport_MountainBikeRide
+        // "strava-gravel" = content.strava.com per-sport heatmap, sport_GravelRide
+        // "mtb-routes"    = Waymarked Trails MTB route overlay (OSM, hi-res to z18)
+        // "road-routes"   = Waymarked Trails cycling/road route overlay (OSM, z18)
+        source: "strava-mtb",
     };
-    let lastNonMobileBlueColor = FILTERS.gColor;
 
     // Update this query string if Strava tiles require your signed auth params.
     // Example: "?Key-Pair-Id=...&Policy=...&Signature=..."
@@ -51,6 +58,24 @@
     const BASE_PATH_PUBLIC = "tiles";
     const BASE_PATH_AUTH = "tiles-auth";
     const TILE_FETCH_TIMEOUT_MS = 3500;
+
+    // --- content.strava.com per-sport "identified" heatmap ------------------
+    // The endpoint the Strava web app itself uses:
+    //   https://content-a.strava.com/identified/globalheat/<sportToken>/<color>/<z>/<x>/<y>.png?v=19&missing=empty
+    // It supports per-discipline heat (sport_Ride, sport_MountainBikeRide,
+    // sport_GravelRide, ...) and authenticates by CloudFront *cookie* (no signed
+    // query in the URL). We fetch it via GM_xmlhttpRequest with credentials so
+    // the browser's .strava.com cookies ride along cross-origin from mapy.com.
+    const CONTENT_HEAT_HOST = "content-a.strava.com";
+    const CONTENT_HEAT_MAX_ZOOM = 15;
+    // grayscale is confirmed valid; the others are best-effort (fall back to
+    // grayscale per-tile if the chosen color 404s).
+    const CONTENT_HEAT_COLORS = ["grayscale", "hot", "bluered", "blue", "mobileblue", "purple"];
+    const STRAVA_CONTENT_SPORT = {
+        "strava-road": "sport_Ride",
+        "strava-mtb": "sport_MountainBikeRide",
+        "strava-gravel": "sport_GravelRide",
+    };
 
     const SPORT_ALIAS = {
         all: "all",
@@ -1234,20 +1259,45 @@
     }
 
     // Ordered list the J hotkey cycles through.
-    const SOURCES = ["strava-ride", "mtb-routes", "road-routes"];
+    const SOURCES = [
+        "strava-road",
+        "strava-mtb",
+        "strava-gravel",
+        "mtb-routes",
+        "road-routes",
+    ];
 
     function getActiveSource() {
-        const s = String(FILTERS.source || "strava-ride").toLowerCase();
-        return SOURCES.includes(s) ? s : "strava-ride";
+        const s = String(FILTERS.source || "strava-mtb").toLowerCase();
+        return SOURCES.includes(s) ? s : "strava-mtb";
     }
 
     function isWmtRouteSource(src) {
         return src === "mtb-routes" || src === "road-routes";
     }
 
+    function isStravaContentSource(src) {
+        return Object.prototype.hasOwnProperty.call(STRAVA_CONTENT_SPORT, src);
+    }
+
+    function getContentColor() {
+        const c = String(FILTERS.gColor || "grayscale").toLowerCase();
+        return CONTENT_HEAT_COLORS.includes(c) ? c : "grayscale";
+    }
+
+    // Try the chosen color first, then grayscale (known-valid) as a fallback.
+    function getContentColorCandidates() {
+        const chosen = getContentColor();
+        return chosen === "grayscale" ? ["grayscale"] : [chosen, "grayscale"];
+    }
+
     function getMaxTileZoomForSource() {
-        if (isWmtRouteSource(getActiveSource())) {
+        const src = getActiveSource();
+        if (isWmtRouteSource(src)) {
             return WMT_MAX_ZOOM;
+        }
+        if (isStravaContentSource(src)) {
+            return CONTENT_HEAT_MAX_ZOOM;
         }
         return stravaAuthAvailable() ? STRAVA_MAX_AUTH_ZOOM : STRAVA_MAX_PUBLIC_ZOOM;
     }
@@ -1261,6 +1311,13 @@
         const authQuery = includeAuth ? getActiveAuthQuery() : "";
         return `https://heatmap-external-${subdomain}.strava.com/${basePath}/` +
             `${sportSlug}/${colorSlug}/${z}/${wrappedX}/${y}.png${authQuery}`;
+    }
+
+    function buildContentHeatUrl(sportToken, color, z, x, y) {
+        const worldSize = Math.pow(2, z);
+        const wrappedX = ((x % worldSize) + worldSize) % worldSize;
+        return `https://${CONTENT_HEAT_HOST}/identified/globalheat/` +
+            `${sportToken}/${color}/${z}/${wrappedX}/${y}.png?v=19&missing=empty`;
     }
 
     // theme: "mtb" (mountain bike routes) or "cycling" (road/touring cycle routes).
@@ -1280,7 +1337,15 @@
         if (source === "road-routes") {
             return { urls: [buildWmtTileUrl("cycling", z, x, y)], needsCookies: false };
         }
-        // Strava ride heatmap.
+        if (isStravaContentSource(source)) {
+            // Per-sport content heatmap, cookie-authed -> GM_xmlhttpRequest path.
+            const sportToken = STRAVA_CONTENT_SPORT[source];
+            const urls = getContentColorCandidates().map((c) =>
+                buildContentHeatUrl(sportToken, c, z, x, y)
+            );
+            return { urls, needsCookies: true };
+        }
+        // Legacy heatmap-external path (kept as fallback; not in SOURCES).
         const authAvailable = stravaAuthAvailable();
         if (z > STRAVA_MAX_PUBLIC_ZOOM) {
             // Public would 404 here. Only the auth path makes sense.
@@ -1380,6 +1445,7 @@
                     anonymous: false,
                     headers: {
                         Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+                        Referer: "https://www.strava.com/",
                     },
                     onload: (response) => {
                         debugStats.lastGmUrl = candidate;
@@ -1390,10 +1456,15 @@
                             debugStats.current.lastStatus = String(response.status);
                         }
                         const blob = response.response;
+                        // Accept image/*; Strava's CDN sometimes labels tiles
+                        // application/octet-stream (or omits the type). The 2xx
+                        // guard below already filters out 403/error XML bodies.
                         const isImageBlob =
                             blob &&
                             typeof blob.type === "string" &&
-                            blob.type.startsWith("image/");
+                            (blob.type.startsWith("image/") ||
+                                blob.type === "application/octet-stream" ||
+                                blob.type === "");
                         if (response.status >= 200 && response.status < 300 && isImageBlob) {
                             debugStats.gmFetchedOk += 1;
                             if (debugStats.current.renderSeq === tileRenderSeq) {
@@ -1866,12 +1937,11 @@
                 const idx = SOURCES.indexOf(getActiveSource());
                 FILTERS.source = SOURCES[(idx + 1) % SOURCES.length];
                 gmSetValue(STORAGE_KEY_SOURCE, FILTERS.source);
-                if (FILTERS.source === "strava-ride") {
-                    probeStravaCookieAuth(true);
-                }
                 lastStateKey = "";
                 const labels = {
-                    "strava-ride": `Strava ride heatmap — all bikes, popularity (z≤${getMaxTileZoomForSource()})`,
+                    "strava-road": `Strava heatmap — Road / sport_Ride, ${getContentColor()} (z≤${CONTENT_HEAT_MAX_ZOOM})`,
+                    "strava-mtb": `Strava heatmap — MTB / sport_MountainBikeRide, ${getContentColor()} (z≤${CONTENT_HEAT_MAX_ZOOM})`,
+                    "strava-gravel": `Strava heatmap — Gravel / sport_GravelRide, ${getContentColor()} (z≤${CONTENT_HEAT_MAX_ZOOM})`,
                     "mtb-routes": "Waymarked Trails — MTB routes (z≤18)",
                     "road-routes": "Waymarked Trails — road/cycling routes (z≤18)",
                 };
@@ -1882,15 +1952,13 @@
             }
             if (key.toLowerCase() === "m") {
                 consume();
-                const current = String(FILTERS.gColor || "hot");
-                if (current.toLowerCase() === "mobileblue") {
-                    FILTERS.gColor = lastNonMobileBlueColor || "hot";
-                } else {
-                    lastNonMobileBlueColor = current || "hot";
-                    FILTERS.gColor = "mobileblue";
-                }
+                // Cycle the per-sport heatmap color (grayscale is the safe default;
+                // the rest are best-effort and fall back to grayscale per tile).
+                const i = CONTENT_HEAT_COLORS.indexOf(getContentColor());
+                FILTERS.gColor = CONTENT_HEAT_COLORS[(i + 1) % CONTENT_HEAT_COLORS.length];
                 lastStateKey = "";
-                updateDebugPanel(`color toggled to ${FILTERS.gColor}`);
+                showNotice(`Heatmap color: ${FILTERS.gColor}`);
+                updateDebugPanel(`color -> ${FILTERS.gColor}`);
                 requestRender();
                 return;
             }
