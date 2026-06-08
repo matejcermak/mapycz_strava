@@ -24,19 +24,21 @@ This repo includes:
 
 ### Hotkeys
 
-Two independent overlays — a **global** heatmap (`J`) and your **personal**
-heatmap (`K`) — that can be shown together (personal blue on top of global hot).
+Two independent overlays — a **global** heatmap (`S`) and your **personal**
+heatmap (`D`) — that can be shown together (personal blue on top of global hot).
+Main controls are a left-hand cluster: **A S D F**.
 
-- `H` — toggle the whole overlay on/off
-- `J` — cycle the **global** heatmap (remembered across reloads):
+- `A` — toggle the whole overlay on/off
+- `S` — cycle the **global** heatmap (remembered across reloads):
   **MTB** (hot) → **Road** (hot) → **off**.
-- `K` — toggle your **personal** heatmap on/off (blue). Its sport follows `J`
+- `D` — toggle your **personal** heatmap on/off (blue). Its sport follows `S`
   (MTB global → MTB personal, Road global → Road personal); when global is off it
   uses the last bike sport you looked at.
-- `G` — toggle Mapy base map between aerial (satellite) and outdoor/tourist
+- `F` — toggle Mapy base map between **aerial** (satellite) and **outdoor**
+  (aerial shows best whether an MTB path is actually rideable).
+- `E` — export current Mapy planner route as GPX and open Ride with GPS upload
 - `[` / `]` — decrease / increase opacity in 10% steps
 - `Alt + D` — toggle debug panel
-- `S` — export current Mapy planner route as GPX and open Ride with GPS upload
 - `P` — toggle Mapy panorama
 
 Colors are **fixed**: global heatmaps are `hot`, personal is `blue` (no color
@@ -46,8 +48,8 @@ hotkey). Waymarked Trails route layers were removed.
 
 | Layer | URL pattern | Max zoom | Auth |
 | --- | --- | --- | --- |
-| Global per-sport heatmap (`J`) | `content-a.strava.com/identified/globalheat/sport_{MountainBikeRide,Ride}/hot/{z}/{x}/{y}.png?v=19&missing=empty` | ~15 | CloudFront **cookie** (logged-in `.strava.com`, via `GM_xmlhttpRequest`) |
-| Personal heatmap (`K`) | `personal-heatmaps-external.strava.com/tiles/<athleteId>/blue/{z}/{x}/{y}.png?...&filter_type=sport_{MountainBikeRide,Ride}&...` | ~15 | CloudFront **cookie** |
+| Global per-sport heatmap (`S`) | `content-a.strava.com/identified/globalheat/sport_{MountainBikeRide,Ride}/hot/{z}/{x}/{y}.png?v=19&missing=empty` | ~15 | CloudFront **cookie** (logged-in `.strava.com`, via `GM_xmlhttpRequest`) |
+| Personal heatmap (`D`) | `personal-heatmaps-external.strava.com/tiles/<athleteId>/blue/{z}/{x}/{y}.png?...&filter_type=sport_{MountainBikeRide,Ride}&...` | ~15 | CloudFront **cookie** |
 
 The **global per-sport heatmap** is the endpoint the Strava web app itself uses,
 and — unlike the public `heatmap-external/.../ride/...` tiles — it **separates
@@ -71,7 +73,7 @@ DevTools → Network, and swap the athlete id / template in. Placeholders `{z}`
 Tiles are cached so panning/switching/reopening is fast instead of re-fetching
 every tile through the (rate-limited) cookie path:
 
-- **In-memory** object-URL cache (this session) — switching `J`/`K` or panning
+- **In-memory** object-URL cache (this session) — switching `S`/`D` or panning
   back is instant.
 - **IndexedDB** cache for **global** tiles (`mapyStravaTileCache`, 30-day TTL) —
   re-opening mapy renders cached areas immediately, no network. This is lazy
@@ -100,26 +102,22 @@ show the tile HTTP status (`200` = working, `403` = cookie problem). High-res
 > signed-query capture + cookie probe (`tryRefreshStravaAuth`,
 > `probeStravaCookieAuth`). That endpoint returned `InvalidKey` for this account,
 > so the script moved to the `content-*` per-sport endpoint above. The legacy
-> code remains but isn't wired into the `J` source list.
+> code remains but isn't wired into the active source list.
 
 **Diagnose:** press `Alt+D` and read the `gm ok/fail` and `last=` lines —
 `200` means heatmap tiles are flowing, `403` means a cookie problem (reload the
 Strava heatmap page logged in to refresh the CloudFront cookies).
 
-### MTB vs road: now actually split
+### MTB vs road: actually split
 
-- **Popularity (Strava per-sport heatmap)** *can* be split. The web app's
-  `content-*.strava.com/identified/globalheat/sport_<X>/...` endpoint serves
-  per-discipline heat — `sport_Ride` (road), `sport_MountainBikeRide`,
-  `sport_GravelRide` — which the public `heatmap-external/.../ride/...` tiles do
-  not (those aggregate every ride sub-type into `ride`). The `J` hotkey cycles
-  Road → MTB → Gravel heatmaps. This needs your logged-in Strava cookies (and a
-  subscription for z>11); the official Strava API / MCP can't help — the heatmap
-  is an internal tile service outside the public API.
-- **Designated routes (Waymarked Trails)** are a complementary free overlay.
-  `J` also cycles to `mtb` (mountain-bike route relations) and `cycling` (signed
-  road/touring cycle routes). These show where routes are *designated*, not how
-  popular they are, but they render crisply to z=18 and need no Strava login.
+The Strava per-sport heatmap *can* be split by discipline. The web app's
+`content-*.strava.com/identified/globalheat/sport_<X>/...` endpoint serves
+per-discipline heat — `sport_Ride` (road) vs `sport_MountainBikeRide` — which the
+public `heatmap-external/.../ride/...` tiles do not (those aggregate every ride
+sub-type into `ride`). `S` cycles MTB → Road → off, and the personal layer (`D`)
+follows the same discipline. This needs your logged-in Strava cookies (and a
+subscription for z>11); the official Strava API / MCP can't help — the heatmap is
+an internal tile service outside the public API.
 
 ## Demo app
 

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Mapy + Strava Heatmap Overlay
 // @namespace    mapy-strava-overlay
-// @version      0.8.0
+// @version      0.9.0
 // @description  Overlay Strava global heatmap or Waymarked Trails MTB/road route layers on mapy.com, switchable, while keeping Mapy controls.
 // @downloadURL  https://github.com/matejcermak/mapycz_strava/raw/refs/heads/main/mapy_strava_overlay.user.js
 // @updateURL    https://github.com/matejcermak/mapycz_strava/raw/refs/heads/main/mapy_strava_overlay.user.js
@@ -2055,20 +2055,21 @@
                 }
             };
 
-            const toggleMapySet = () => {
-                const container =
-                    document.querySelector("mapy-mapmenu-mapset-options") ||
-                    document.querySelector("[class*='mapmenu-mapset-options']");
-                if (!container) {
-                    updateDebugPanel("mapset options not found");
-                    return;
-                }
-                const root = container.shadowRoot || container;
-                const options = Array.from(
-                    root.querySelectorAll(
-                        "[data-mapset], [data-id], button, [role='button'], li, a"
-                    )
-                );
+            const toggleMapyBaseLayer = async () => {
+                const findOptions = () => {
+                    const container =
+                        document.querySelector("mapy-mapmenu-mapset-options") ||
+                        document.querySelector("[class*='mapmenu-mapset-options']");
+                    if (!container) {
+                        return null;
+                    }
+                    const root = container.shadowRoot || container;
+                    return Array.from(
+                        root.querySelectorAll(
+                            "[data-mapset], [data-id], button, [role='button'], li, a"
+                        )
+                    );
+                };
                 const matches = (el, patterns) => {
                     const hay = [
                         el.getAttribute && el.getAttribute("data-mapset"),
@@ -2082,6 +2083,42 @@
                         .toLowerCase();
                     return patterns.some((p) => hay.includes(p));
                 };
+
+                // The switcher panel is usually collapsed -> open it first.
+                const openSwitcher = () => {
+                    const needles = ["switch map", "změnit mapu", "zmenit mapu", "přepnout mapu"];
+                    const cands = Array.from(
+                        document.querySelectorAll("button, a, [role='button'], span, div")
+                    );
+                    for (const el of cands) {
+                        const txt = `${(el.getAttribute && el.getAttribute("aria-label")) || ""} ${(el.getAttribute && el.getAttribute("title")) || ""} ${el.textContent || ""}`.toLowerCase();
+                        if (
+                            needles.some((n) => txt.includes(n)) &&
+                            (el.textContent || "").trim().length < 40 &&
+                            elementIsClickable(el)
+                        ) {
+                            simulateUserClick(el);
+                            return true;
+                        }
+                    }
+                    return false;
+                };
+
+                let options = findOptions();
+                if (!options) {
+                    openSwitcher();
+                    await waitForElement(
+                        "mapy-mapmenu-mapset-options, [class*='mapmenu-mapset-options']",
+                        1200
+                    );
+                    options = findOptions();
+                }
+                if (!options) {
+                    updateDebugPanel("mapset options not found");
+                    showNotice("Couldn't find Mapy's map switcher.");
+                    return;
+                }
+
                 const aerial = options.find((el) =>
                     matches(el, ["letecká", "letecka", "aerial", "satellite", "ophoto"])
                 );
@@ -2103,9 +2140,7 @@
                     );
                 };
                 const target = isActive(aerial) ? outdoor : aerial;
-                target.dispatchEvent(
-                    new MouseEvent("click", { bubbles: true, cancelable: true, view: window })
-                );
+                simulateUserClick(target);
                 updateDebugPanel(
                     `mapset toggled to ${target === aerial ? "aerial" : "outdoor"}`
                 );
@@ -2127,18 +2162,15 @@
                 updateDebugPanel("panorama toggled");
             };
 
-            if (key.toLowerCase() === "h") {
+            // Left-hand cluster: A overlay, S global heat, D personal heat, F map.
+            if (key.toLowerCase() === "a") {
                 consume();
                 overlayEnabled = !overlayEnabled;
+                showNotice(`Overlay: ${overlayEnabled ? "on" : "off"}`);
                 requestRender();
                 return;
             }
-            if (key.toLowerCase() === "g") {
-                consume();
-                toggleMapySet();
-                return;
-            }
-            if (key.toLowerCase() === "j") {
+            if (key.toLowerCase() === "s") {
                 consume();
                 const order = ["mtb", "road", "off"];
                 globalMode = order[(order.indexOf(globalMode) + 1) % order.length];
@@ -2157,7 +2189,7 @@
                 requestRender();
                 return;
             }
-            if (key.toLowerCase() === "k") {
+            if (key.toLowerCase() === "d" && !event.altKey) {
                 consume();
                 personalOn = !personalOn;
                 gmSetValue(STORAGE_KEY_PERSONAL_ON, personalOn ? "1" : "0");
@@ -2165,8 +2197,7 @@
                 if (personalOn && !personalConfigured()) {
                     showNotice(
                         "Personal heatmap not set up yet.\n" +
-                        "Open your Strava personal heatmap, copy a tile URL from the\n" +
-                        "Network tab, and add it to PERSONAL_HEAT_URL_TEMPLATE."
+                        "Add your personal-heatmap tile URL to PERSONAL_HEAT_URL_TEMPLATE."
                     );
                 } else {
                     const sport = globalMode === "off" ? lastBikeSport : globalMode;
@@ -2180,7 +2211,12 @@
                 requestRender();
                 return;
             }
-            if (key.toLowerCase() === "s") {
+            if (key.toLowerCase() === "f") {
+                consume();
+                toggleMapyBaseLayer();
+                return;
+            }
+            if (key.toLowerCase() === "e") {
                 consume();
                 exportPlannerGpxAndOpenRwGps().catch((err) => {
                     showNotice(`Export/upload failed: ${String(err && err.message ? err.message : err)}`);
