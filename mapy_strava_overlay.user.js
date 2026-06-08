@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Mapy + Strava Heatmap Overlay
 // @namespace    mapy-strava-overlay
-// @version      0.11.0
+// @version      0.12.0
 // @description  Overlay Strava global heatmap or Waymarked Trails MTB/road route layers on mapy.com, switchable, while keeping Mapy controls.
 // @downloadURL  https://github.com/matejcermak/mapycz_strava/raw/refs/heads/main/mapy_strava_overlay.user.js
 // @updateURL    https://github.com/matejcermak/mapycz_strava/raw/refs/heads/main/mapy_strava_overlay.user.js
@@ -1519,7 +1519,10 @@
     // Personal heat tiles come back as an opaque BLACK background with grayscale
     // heat painted on top. Convert to a transparent-background blue overlay:
     // alpha = heat intensity, rgb = fixed blue. Returns an object URL (or "").
-    const PERSONAL_RGB = [40, 130, 255];
+    const PERSONAL_RGB = [30, 144, 255];      // vivid (dodger) blue, pops over orange
+    const PERSONAL_ALPHA_GAIN = 2.5;          // lift faint (lightly-ridden) tracks
+    const PERSONAL_ALPHA_FLOOR = 90;          // min opacity for any real track pixel
+    const PERSONAL_ALPHA_THRESHOLD = 8;       // below this = anti-alias noise -> drop
     function recolorHeatTileToBlue(blob) {
         return new Promise((resolve) => {
             let srcUrl = "";
@@ -1552,7 +1555,14 @@
                             d[i] = PERSONAL_RGB[0];
                             d[i + 1] = PERSONAL_RGB[1];
                             d[i + 2] = PERSONAL_RGB[2];
-                            d[i + 3] = intensity; // black bg -> 0 (transparent)
+                            // Black background -> transparent; boost real tracks so
+                            // even lightly-ridden ones stand out over the global heat.
+                            d[i + 3] = intensity <= PERSONAL_ALPHA_THRESHOLD
+                                ? 0
+                                : Math.min(
+                                      255,
+                                      Math.round(intensity * PERSONAL_ALPHA_GAIN) + PERSONAL_ALPHA_FLOOR
+                                  );
                         }
                         ctx.putImageData(imageData, 0, 0);
                         canvas.toBlob((outBlob) => {
