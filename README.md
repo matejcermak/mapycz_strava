@@ -41,8 +41,11 @@ Main controls are a left-hand cluster: **A S D F**.
 - `Alt + D` — toggle debug panel
 - `P` — toggle Mapy panorama
 
-Colors are **fixed**: global heatmaps are `hot`, personal is `blue` (no color
-hotkey). Waymarked Trails route layers were removed.
+Colors are **fixed**: global heatmaps are `hot`; personal is fetched as
+`grayscale` (transparent where you have no activity) and **tinted blue via CSS**
+(`PERSONAL_TINT_FILTER`) — requesting `color=blue` from the personal endpoint
+returns opaque-black "empty" tiles (black boxes). No color hotkey. Waymarked
+Trails route layers were removed.
 
 ### Tile sources
 

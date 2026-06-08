@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Mapy + Strava Heatmap Overlay
 // @namespace    mapy-strava-overlay
-// @version      0.9.0
+// @version      0.10.0
 // @description  Overlay Strava global heatmap or Waymarked Trails MTB/road route layers on mapy.com, switchable, while keeping Mapy controls.
 // @downloadURL  https://github.com/matejcermak/mapycz_strava/raw/refs/heads/main/mapy_strava_overlay.user.js
 // @updateURL    https://github.com/matejcermak/mapycz_strava/raw/refs/heads/main/mapy_strava_overlay.user.js
@@ -43,7 +43,11 @@
     let personalOn = false;
     let lastBikeSport = "mtb";    // "mtb" | "road"
     const GLOBAL_HEAT_COLOR = "hot";
-    const PERSONAL_HEAT_COLOR = "blue";
+    const PERSONAL_HEAT_COLOR = "blue"; // label only; tiles fetched grayscale + tinted
+    // The personal endpoint returns opaque-black "empty" tiles for color=blue
+    // (black boxes), but grayscale tiles are transparent where you have no
+    // activity. So we fetch grayscale and tint it blue with this CSS filter.
+    const PERSONAL_TINT_FILTER = "sepia(1) saturate(6) hue-rotate(185deg) brightness(1.15)";
     const BIKE_SPORT_TOKEN = {
         mtb: "sport_MountainBikeRide",
         road: "sport_Ride",
@@ -1334,11 +1338,10 @@
     function getLayerFetchPlan(layer, z, x, y) {
         const sportToken = BIKE_SPORT_TOKEN[layer.sport] || BIKE_SPORT_TOKEN.mtb;
         if (layer.kind === "personal") {
+            // grayscale = transparent where you have no activity; tinted blue via
+            // PERSONAL_TINT_FILTER. (color=blue here returns opaque-black empties.)
             return {
-                urls: [
-                    buildPersonalHeatUrl(sportToken, PERSONAL_HEAT_COLOR, z, x, y),
-                    buildPersonalHeatUrl(sportToken, "grayscale", z, x, y),
-                ],
+                urls: [buildPersonalHeatUrl(sportToken, "grayscale", z, x, y)],
                 needsCookies: true,
                 persist: false, // personal heat changes often -> session-cache only
             };
@@ -1780,6 +1783,7 @@
                 position: "absolute",
                 inset: "0",
                 overflow: "hidden",
+                filter: PERSONAL_TINT_FILTER, // tint grayscale personal tiles blue
             });
             // Appended after the global layer -> personal blue renders on top.
             overlayRoot.appendChild(personalTileLayer);
@@ -2055,95 +2059,26 @@
                 }
             };
 
-            const toggleMapyBaseLayer = async () => {
-                const findOptions = () => {
-                    const container =
-                        document.querySelector("mapy-mapmenu-mapset-options") ||
-                        document.querySelector("[class*='mapmenu-mapset-options']");
-                    if (!container) {
-                        return null;
-                    }
-                    const root = container.shadowRoot || container;
-                    return Array.from(
-                        root.querySelectorAll(
-                            "[data-mapset], [data-id], button, [role='button'], li, a"
-                        )
-                    );
-                };
-                const matches = (el, patterns) => {
-                    const hay = [
-                        el.getAttribute && el.getAttribute("data-mapset"),
-                        el.getAttribute && el.getAttribute("data-id"),
-                        el.getAttribute && el.getAttribute("title"),
-                        el.getAttribute && el.getAttribute("aria-label"),
-                        el.textContent,
-                    ]
-                        .filter(Boolean)
-                        .join(" ")
-                        .toLowerCase();
-                    return patterns.some((p) => hay.includes(p));
-                };
-
-                // The switcher panel is usually collapsed -> open it first.
-                const openSwitcher = () => {
-                    const needles = ["switch map", "změnit mapu", "zmenit mapu", "přepnout mapu"];
-                    const cands = Array.from(
-                        document.querySelectorAll("button, a, [role='button'], span, div")
-                    );
-                    for (const el of cands) {
-                        const txt = `${(el.getAttribute && el.getAttribute("aria-label")) || ""} ${(el.getAttribute && el.getAttribute("title")) || ""} ${el.textContent || ""}`.toLowerCase();
-                        if (
-                            needles.some((n) => txt.includes(n)) &&
-                            (el.textContent || "").trim().length < 40 &&
-                            elementIsClickable(el)
-                        ) {
-                            simulateUserClick(el);
-                            return true;
-                        }
-                    }
-                    return false;
-                };
-
-                let options = findOptions();
-                if (!options) {
-                    openSwitcher();
-                    await waitForElement(
-                        "mapy-mapmenu-mapset-options, [class*='mapmenu-mapset-options']",
-                        1200
-                    );
-                    options = findOptions();
-                }
-                if (!options) {
-                    updateDebugPanel("mapset options not found");
-                    showNotice("Couldn't find Mapy's map switcher.");
+            const toggleMapyBaseLayer = () => {
+                // Mapy's left toolbar has a one-click Aerial toggle that flips
+                // between aerial (letecká) and the current base map (e.g.
+                // outdoor/turistická) and back. Verified against mapy.com's DOM:
+                // <mapy-map-toggle class="map-controls__ophoto" aria-label="Aerial">.
+                const el =
+                    document.querySelector("mapy-map-toggle.map-controls__ophoto") ||
+                    document.querySelector(".map-controls__ophoto") ||
+                    document.querySelector("mapy-map-toggle[aria-label='Aerial']") ||
+                    document.querySelector("mapy-map-toggle[aria-label='Letecká']") ||
+                    document.querySelector("[aria-label='Aerial'], [aria-label='Letecká']");
+                if (!el) {
+                    updateDebugPanel("aerial toggle not found");
+                    showNotice("Couldn't find Mapy's aerial toggle.");
                     return;
                 }
-
-                const aerial = options.find((el) =>
-                    matches(el, ["letecká", "letecka", "aerial", "satellite", "ophoto"])
+                el.dispatchEvent(
+                    new MouseEvent("click", { bubbles: true, cancelable: true, view: window })
                 );
-                const outdoor = options.find((el) =>
-                    matches(el, ["turistická", "turisticka", "outdoor", "hiking", "tourist"])
-                );
-                if (!aerial || !outdoor) {
-                    updateDebugPanel("aerial/outdoor option not found");
-                    return;
-                }
-                const isActive = (el) => {
-                    const cls = (el.className && el.className.baseVal) || el.className || "";
-                    const aria = el.getAttribute && el.getAttribute("aria-checked");
-                    const sel = el.getAttribute && el.getAttribute("aria-selected");
-                    return (
-                        /\b(active|selected|is-active|is-selected)\b/i.test(String(cls)) ||
-                        aria === "true" ||
-                        sel === "true"
-                    );
-                };
-                const target = isActive(aerial) ? outdoor : aerial;
-                simulateUserClick(target);
-                updateDebugPanel(
-                    `mapset toggled to ${target === aerial ? "aerial" : "outdoor"}`
-                );
+                updateDebugPanel("toggled aerial/outdoor");
             };
 
             const togglePanorama = () => {
