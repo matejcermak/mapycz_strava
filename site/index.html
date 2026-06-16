@@ -82,8 +82,8 @@
     .hm { font-weight: 700; color: var(--orange); white-space: nowrap; }
     .hmp { font-weight: 700; color: var(--blue); white-space: nowrap; }
     /* Mapy.com is a link, emphasized with underline only — no color change */
-    .mapy-link { color: inherit; text-decoration: underline; text-underline-offset: 2px; text-decoration-thickness: 1.5px; }
-    .mapy-link:hover { text-decoration-thickness: 2.5px; }
+    .mapy-link, .strava-link { color: inherit; text-decoration: underline; text-underline-offset: 2px; text-decoration-thickness: 1.5px; }
+    .mapy-link:hover, .strava-link:hover { text-decoration-thickness: 2.5px; }
     .cta-row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-bottom: 12px; }
     .fineprint { font-size: 13px; color: var(--muted); }
     .fineprint b { color: var(--ink); }
@@ -124,6 +124,20 @@
     .shots figure { margin: 0; }
     .shots img { width: 100%; border-radius: var(--radius); border: 1px solid var(--line); box-shadow: var(--shadow); display: block; }
     .shots figcaption { text-align: center; color: var(--muted); font-size: 13px; margin-top: 8px; }
+
+    /* single demo GIF in the extension section */
+    .demo-fig { margin: 6px auto 0; max-width: 860px; text-align: center; }
+    .demo-fig img { width: 100%; border-radius: var(--radius); border: 1px solid var(--line); box-shadow: var(--shadow); display: block; }
+    .demo-fig figcaption { color: var(--muted); font-size: 14px; margin-top: 14px; }
+
+    /* Mapy vs Strava comparison */
+    .cmp-list { display: flex; flex-direction: column; gap: 36px; margin-top: 10px; }
+    .cmp h3 { margin: 0 0 5px; font-size: 19px; }
+    .cmp p { margin: 0 0 14px; color: var(--muted); max-width: 760px; }
+    .cmp-shot { width: 100%; aspect-ratio: 18 / 7; border-radius: var(--radius); border: 2px dashed #d8d8e0;
+        background: #fff; display: flex; align-items: center; justify-content: center; color: #a6a6b0;
+        font-size: 14px; text-align: center; padding: 14px; }
+    .cmp-shot img { width: 100%; border-radius: var(--radius); border: 1px solid var(--line); box-shadow: var(--shadow); display: block; }
 
     /* final cta */
     .final { text-align: center; }
@@ -181,13 +195,13 @@
     <section class="hero">
         <div class="wrap">
             <h1>Strava heatmaps, on the map that's <span class="g">actually good at planning</span>.</h1>
-            <p class="sub">Overlay Strava's <span class="hm">global heatmap</span> and your
+            <p class="sub">Overlay <a class="strava-link" href="https://www.strava.com/maps/global-heatmap" target="_blank" rel="noopener">Strava</a>'s <span class="hm">global heatmap</span> and your
                 <span class="hmp">personal heatmap</span> on <a class="mapy-link" href="https://mapy.com" target="_blank" rel="noopener">Mapy.com</a> —
                 switch 🚴 Road / 🚵 MTB / 🏃 Running maps, and spot the roads and trails you've never explored yet.</p>
             <div class="cta-row">
                 <a class="btn btn--chrome" href="#" data-cta="chrome">
                     <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 1 8.66 5H12a5 5 0 0 0-4.33 2.5L4.2 4.8A10 10 0 0 1 12 2Zm9.5 6.5A10 10 0 0 1 12 22l4.33-7.5A5 5 0 0 0 12 7h9.5ZM2.5 6.6 6.83 14A5 5 0 0 0 12 17l-1.7 5A10 10 0 0 1 2.5 6.6ZM12 9a3 3 0 1 1 0 6 3 3 0 0 1 0-6Z"/></svg>
-                    Get the Chrome Extension (Free)
+                    Chrome Extension (Free)
                 </a>
                 <a class="btn btn--coffee" href="#" data-cta="coffee">☕ Buy me a coffee</a>
                 <a class="btn btn--ghost" href="https://github.com/matejcermak/mapycz_strava" target="_blank" rel="noopener">
@@ -215,7 +229,7 @@
         <div class="wrap">
             <div class="kicker">Why Mapy.com</div>
             <h2>A map built for the outdoors — and for planning</h2>
-            <p class="lead">Strava's base map is thin. <a class="mapy-link" href="https://mapy.com" target="_blank" rel="noopener">Mapy.com</a>'s outdoor map shows what actually matters when you're
+            <p class="lead"><a class="strava-link" href="https://www.strava.com/maps/global-heatmap" target="_blank" rel="noopener">Strava</a>'s base map is thin. <a class="mapy-link" href="https://mapy.com" target="_blank" rel="noopener">Mapy.com</a>'s outdoor map shows what actually matters when you're
                 choosing where to go.</p>
             <div class="grid">
                 <div class="card">
@@ -246,20 +260,50 @@
     <section class="block" id="extension">
         <div class="wrap">
             <div class="kicker">The extension</div>
-            <h2>Now with the best thing about Strava: everyone's <span class="hm">heatmaps</span></h2>
-            <p class="lead">Combine <a class="mapy-link" href="https://mapy.com" target="_blank" rel="noopener">Mapy.com</a>'s planning with Strava's crowd data. Switch the
+            <h2>Now with the best thing about <a class="strava-link" href="https://www.strava.com/maps/global-heatmap" target="_blank" rel="noopener">Strava</a>: everyone's <span class="hm">heatmaps</span></h2>
+            <p class="lead">Combine <a class="mapy-link" href="https://mapy.com" target="_blank" rel="noopener">Mapy.com</a>'s planning with <a class="strava-link" href="https://www.strava.com/maps/global-heatmap" target="_blank" rel="noopener">Strava</a>'s crowd data. Switch the
                 <span class="hm">global heatmap</span> between 🚴 Road / 🚵 MTB / 🏃 Running, then overlay your
                 <span class="hmp">personal heatmap</span> on top — and instantly see roads the locals know that you
                 haven't ridden yet.</p>
-            <div class="shots">
-                <figure>
-                    <img src="img/mtb.png" alt="Global MTB heatmap with personal heatmap overlaid" />
-                    <figcaption><span class="hm">Global MTB heatmap</span> + your <span class="hmp">personal heatmap</span></figcaption>
-                </figure>
-                <figure>
-                    <img src="img/ride.png" alt="Global Road heatmap on Mapy.com" />
-                    <figcaption>Switch to Road or Running in one click</figcaption>
-                </figure>
+            <figure class="demo-fig">
+                <img src="img/overlay-demo.gif" alt="Strava global MTB heatmap with your personal heatmap overlaid on Mapy.com" />
+                <figcaption><span class="hm">Global MTB heatmap</span> + your <span class="hmp">personal heatmap</span></figcaption>
+            </figure>
+        </div>
+    </section>
+
+    <!-- COMPARE: Mapy.com vs Strava planning (side-by-side screenshots) -->
+    <section class="block soft" id="compare">
+        <div class="wrap">
+            <div class="kicker">Mapy.com vs Strava</div>
+            <h2>Built for planning — see the difference</h2>
+            <p class="lead">Same spot, two maps: <a class="mapy-link" href="https://mapy.com" target="_blank" rel="noopener">Mapy.com</a>
+                on the left, <a class="strava-link" href="https://www.strava.com/maps/global-heatmap" target="_blank" rel="noopener">Strava</a> on the right.</p>
+            <div class="cmp-list">
+                <div class="cmp">
+                    <h3>⛰️ See the terrain</h3>
+                    <p>Gradient shading and contours tell you instantly whether it's hilly or flat, forest or open — Strava's base map stays flat and bare.</p>
+                    <!-- swap for: <img src="img/compare-terrain.png" alt="Mapy.com vs Strava terrain"> -->
+                    <div class="cmp-shot">Side-by-side screenshot — Mapy.com (left) vs Strava (right)</div>
+                </div>
+                <div class="cmp">
+                    <h3>🛣️ Know the road before you ride it</h3>
+                    <p>Mapy.com colours a busy main road, a quiet lane, and a gravel or forest track differently — so your A→B isn't a highway full of cars. Strava doesn't tell them apart.</p>
+                    <!-- swap for: <img src="img/compare-roadtype.png" alt="Mapy.com vs Strava road types"> -->
+                    <div class="cmp-shot">Side-by-side screenshot — Mapy.com (left) vs Strava (right)</div>
+                </div>
+                <div class="cmp">
+                    <h3>🛤️ Every path — and what's closed</h3>
+                    <p>Every tiny trail in the middle of nowhere is on Mapy.com, with up-to-date closures. Strava's map misses the small stuff.</p>
+                    <!-- swap for: <img src="img/compare-paths.png" alt="Mapy.com vs Strava paths and closures"> -->
+                    <div class="cmp-shot">Side-by-side screenshot — Mapy.com (left) vs Strava (right)</div>
+                </div>
+                <div class="cmp">
+                    <h3>🧭 Smarter route planning</h3>
+                    <p>Mapy.com snaps to real routes, ⌘/Ctrl-click drops points fast, and it respects MTB vs road. Strava's planner is clunkier and ignores the terrain.</p>
+                    <!-- swap for: <img src="img/compare-planning.png" alt="Mapy.com vs Strava route planning"> -->
+                    <div class="cmp-shot">Side-by-side screenshot — Mapy.com (left) vs Strava (right)</div>
+                </div>
             </div>
         </div>
     </section>
@@ -276,7 +320,7 @@
             <a href="https://github.com/matejcermak/mapycz_strava/blob/main/PRIVACY.md" target="_blank" rel="noopener">Privacy</a>
             <a href="#" data-cta="coffee">Donate</a>
         </div>
-        <p class="disclaim">An independent project — not affiliated with Strava or <a class="mapy-link" href="https://mapy.com" target="_blank" rel="noopener">Mapy.com</a>. Heatmap data © Strava; maps © <a class="mapy-link" href="https://mapy.com" target="_blank" rel="noopener">Mapy.com</a> / Seznam.cz.</p>
+        <p class="disclaim">An independent project — not affiliated with <a class="strava-link" href="https://www.strava.com/maps/global-heatmap" target="_blank" rel="noopener">Strava</a> or <a class="mapy-link" href="https://mapy.com" target="_blank" rel="noopener">Mapy.com</a>. Heatmap data © <a class="strava-link" href="https://www.strava.com/maps/global-heatmap" target="_blank" rel="noopener">Strava</a>; maps © <a class="mapy-link" href="https://mapy.com" target="_blank" rel="noopener">Mapy.com</a> / Seznam.cz.</p>
     </div>
 </footer>
 
