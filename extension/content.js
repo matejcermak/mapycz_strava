@@ -1,0 +1,742 @@
+// Strava Heatmap for Mapy.cz — content script.
+// Renders two composited tile layers over the Mapy map:
+//   - GLOBAL per-sport heatmap (content-a.strava.com/identified/globalheat) in "hot"
+//   - PERSONAL heatmap (personal-heatmaps-external.strava.com) recolored blue
+// Cross-origin tiles are fetched (with your Strava cookies) by the service
+// worker; this script handles geometry, caching, recolor, the on-map panel,
+// and hotkeys. Adapted from the Tampermonkey userscript.
+(function () {
+    "use strict";
+
+    if (!window.chrome || !chrome.runtime || !chrome.runtime.id) {
+        return; // not running as an extension content script
+    }
+
+    // ---- Config --------------------------------------------------------------
+    const GLOBAL_HOST = "content-a.strava.com";
+    const GLOBAL_COLOR = "hot";
+    const GLOBAL_MAX_ZOOM = 15;
+    const PERSONAL_HOST = "personal-heatmaps-external.strava.com";
+    const PERSONAL_RGB = [30, 144, 255]; // dodger blue
+    const PERSONAL_ALPHA_GAIN = 2.5;
+    const PERSONAL_ALPHA_FLOOR = 90;
+    const PERSONAL_ALPHA_THRESHOLD = 8;
+    const BIKE_SPORT_TOKEN = { mtb: "sport_MountainBikeRide", road: "sport_Ride" };
+    const MIN_ZOOM = 0;
+    const MAX_ZOOM = 22;
+    const GLOBAL_TILE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+    const MEM_CACHE_MAX = 4000;
+
+    // ---- State ---------------------------------------------------------------
+    let overlayEnabled = true;
+    let globalMode = "mtb"; // "mtb" | "road" | "off"
+    let personalOn = false;
+    let lastBikeSport = "mtb";
+    let opacity = 100;
+    let athleteId = "";
+
+    let overlayRoot = null;
+    let globalLayer = null;
+    let personalLayer = null;
+    let panelRoot = null;
+    let rafId = null;
+    let renderSeq = 0;
+    let lastStateKey = "";
+
+    function clamp(v, lo, hi) {
+        return Math.max(lo, Math.min(hi, v));
+    }
+
+    // ---- Persistence (localStorage on the mapy origin) -----------------------
+    function lsGet(key, fallback) {
+        try {
+            const v = window.localStorage.getItem("mapyStrava:" + key);
+            return v === null ? fallback : v;
+        } catch (_) {
+            return fallback;
+        }
+    }
+    function lsSet(key, value) {
+        try {
+            window.localStorage.setItem("mapyStrava:" + key, String(value));
+        } catch (_) {
+            // ignore
+        }
+    }
+
+    globalMode = ["mtb", "road", "off"].includes(lsGet("globalMode", "mtb"))
+        ? lsGet("globalMode", "mtb")
+        : "mtb";
+    if (globalMode !== "off") {
+        lastBikeSport = globalMode;
+    }
+    personalOn = lsGet("personalOn", "") === "1";
+    opacity = clamp(parseInt(lsGet("opacity", "100"), 10) || 100, 0, 100);
+
+    // ---- Athlete id (for the personal heatmap) -------------------------------
+    function applyAthleteId(id) {
+        const next = String(id || "");
+        if (next !== athleteId) {
+            athleteId = next;
+            lastStateKey = "";
+            requestRender();
+            renderPanel();
+        }
+    }
+    try {
+        chrome.storage.local.get("stravaAthleteId", (res) => {
+            if (res && res.stravaAthleteId) {
+                applyAthleteId(res.stravaAthleteId);
+            }
+            // Ask the worker to (re)detect in the background.
+            chrome.runtime.sendMessage({ type: "detectAthlete" }, (r) => {
+                if (!chrome.runtime.lastError && r && r.ok && r.athleteId) {
+                    applyAthleteId(r.athleteId);
+                }
+            });
+        });
+        chrome.storage.onChanged.addListener((changes, area) => {
+            if (area === "local" && changes.stravaAthleteId) {
+                applyAthleteId(changes.stravaAthleteId.newValue || "");
+            }
+        });
+    } catch (_) {
+        // ignore
+    }
+
+    // ---- Mapy map state ------------------------------------------------------
+    function parseMapyState() {
+        const url = new URL(window.location.href);
+        const hash = window.location.hash.replace(/^#/, "");
+        const candidates = [];
+        const decimalDigits = (text) => {
+            const m = String(text || "").match(/\.(\d+)/);
+            return m ? m[1].length : 0;
+        };
+        const add = (z, y, x) => {
+            const zoom = Number(z);
+            const lat = Number(y);
+            const lon = Number(x);
+            if (!Number.isFinite(zoom) || !Number.isFinite(lat) || !Number.isFinite(lon)) {
+                return;
+            }
+            candidates.push({
+                zoom,
+                lat,
+                lon,
+                score: decimalDigits(z) + decimalDigits(y) + decimalDigits(x),
+            });
+        };
+        add(url.searchParams.get("z"), url.searchParams.get("y"), url.searchParams.get("x"));
+        const slash = hash.split("/");
+        if (slash.length >= 3) {
+            add(slash[0], slash[1], slash[2]);
+        }
+        const hp = new URLSearchParams(hash);
+        add(hp.get("z"), hp.get("y"), hp.get("x"));
+        if (!candidates.length) {
+            return null;
+        }
+        candidates.sort((a, b) => b.score - a.score);
+        const best = candidates[0];
+        return { zoom: best.zoom, lat: best.lat, lon: best.lon };
+    }
+
+    function getMapViewportRect() {
+        const canvases = Array.from(document.querySelectorAll("canvas"));
+        let best = null;
+        let bestArea = 0;
+        for (const c of canvases) {
+            const r = c.getBoundingClientRect();
+            const area = Math.max(0, r.width) * Math.max(0, r.height);
+            if (area > bestArea) {
+                bestArea = area;
+                best = c;
+            }
+        }
+        const el = best || document.body;
+        const r = el.getBoundingClientRect();
+        return { left: r.left, top: r.top, width: Math.max(0, r.width), height: Math.max(0, r.height) };
+    }
+
+    function lonToTileX(lon, zoom) {
+        return ((lon + 180) / 360) * Math.pow(2, zoom);
+    }
+    function latToTileY(lat, zoom) {
+        const rad = (lat * Math.PI) / 180;
+        const n = Math.PI - Math.log(Math.tan(Math.PI / 4 + rad / 2));
+        return (n / Math.PI / 2) * Math.pow(2, zoom);
+    }
+
+    // ---- Tile URLs -----------------------------------------------------------
+    function wrapX(x, z) {
+        const world = Math.pow(2, z);
+        return ((x % world) + world) % world;
+    }
+    function buildGlobalUrl(sport, z, x, y) {
+        const token = BIKE_SPORT_TOKEN[sport] || BIKE_SPORT_TOKEN.mtb;
+        return (
+            `https://${GLOBAL_HOST}/identified/globalheat/${token}/${GLOBAL_COLOR}/` +
+            `${z}/${wrapX(x, z)}/${y}.png?v=19&missing=empty`
+        );
+    }
+    function buildPersonalUrl(sport, z, x, y) {
+        if (!athleteId) {
+            return "";
+        }
+        const token = BIKE_SPORT_TOKEN[sport] || BIKE_SPORT_TOKEN.mtb;
+        return (
+            `https://${PERSONAL_HOST}/tiles/${athleteId}/grayscale/${z}/${wrapX(x, z)}/${y}.png` +
+            `?missing=empty&filter_type=${token}&include_everyone=true&include_followers_only=true` +
+            `&include_only_me=true&respect_privacy_zones=false&include_commutes=false`
+        );
+    }
+
+    // ---- Caches --------------------------------------------------------------
+    const memCache = new Map(); // url -> objectURL
+    function memGet(url) {
+        const v = memCache.get(url);
+        if (v) {
+            memCache.delete(url);
+            memCache.set(url, v);
+        }
+        return v || "";
+    }
+    function memPut(url, objectUrl) {
+        if (memCache.has(url)) {
+            return;
+        }
+        memCache.set(url, objectUrl);
+        while (memCache.size > MEM_CACHE_MAX) {
+            const k = memCache.keys().next().value;
+            const u = memCache.get(k);
+            memCache.delete(k);
+            try {
+                URL.revokeObjectURL(u);
+            } catch (_) {
+                // ignore
+            }
+        }
+    }
+
+    const DB_NAME = "mapyStravaTileCache";
+    const DB_STORE = "tiles";
+    let dbPromise = null;
+    function openDb() {
+        if (dbPromise) {
+            return dbPromise;
+        }
+        dbPromise = new Promise((resolve) => {
+            let req;
+            try {
+                req = indexedDB.open(DB_NAME, 1);
+            } catch (_) {
+                resolve(null);
+                return;
+            }
+            req.onupgradeneeded = () => {
+                const db = req.result;
+                if (!db.objectStoreNames.contains(DB_STORE)) {
+                    db.createObjectStore(DB_STORE);
+                }
+            };
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => resolve(null);
+        });
+        return dbPromise;
+    }
+    async function idbGet(url) {
+        try {
+            const db = await openDb();
+            if (!db) {
+                return null;
+            }
+            return await new Promise((resolve) => {
+                const tx = db.transaction(DB_STORE, "readonly");
+                const r = tx.objectStore(DB_STORE).get(url);
+                r.onsuccess = () => resolve(r.result || null);
+                r.onerror = () => resolve(null);
+            });
+        } catch (_) {
+            return null;
+        }
+    }
+    function idbPut(url, blob) {
+        (async () => {
+            try {
+                const db = await openDb();
+                if (!db) {
+                    return;
+                }
+                const tx = db.transaction(DB_STORE, "readwrite");
+                tx.objectStore(DB_STORE).put({ blob, ts: Date.now() }, url);
+            } catch (_) {
+                // best-effort
+            }
+        })();
+    }
+
+    // ---- Tile fetch (via service worker, with Strava cookies) ----------------
+    let authNotifiedAt = 0;
+    function noteAuthFailure() {
+        const now = Date.now();
+        if (now - authNotifiedAt < 60000) {
+            return;
+        }
+        authNotifiedAt = now;
+        toast(
+            "Strava heatmap needs you logged in (and Subscription for zoom > 11).\n" +
+            "Open strava.com, log in, then reload this page."
+        );
+    }
+    function fetchTileViaSW(url) {
+        return new Promise((resolve) => {
+            try {
+                chrome.runtime.sendMessage({ type: "fetchTile", url }, (resp) => {
+                    if (chrome.runtime.lastError || !resp) {
+                        resolve({ ok: false, status: 0 });
+                        return;
+                    }
+                    if (resp.ok && resp.buf) {
+                        resolve({
+                            ok: true,
+                            status: resp.status,
+                            blob: new Blob([resp.buf], { type: resp.contentType || "image/png" }),
+                        });
+                    } else {
+                        resolve({ ok: false, status: resp.status || 0 });
+                    }
+                });
+            } catch (_) {
+                resolve({ ok: false, status: 0 });
+            }
+        });
+    }
+
+    // Personal tiles arrive opaque-black with grayscale heat; key black ->
+    // transparent and paint the heat blue (alpha = boosted intensity).
+    function recolorToBlue(blob) {
+        return new Promise((resolve) => {
+            let srcUrl = "";
+            const done = (out) => {
+                if (srcUrl) {
+                    try {
+                        URL.revokeObjectURL(srcUrl);
+                    } catch (_) {
+                        // ignore
+                    }
+                }
+                resolve(out);
+            };
+            try {
+                srcUrl = URL.createObjectURL(blob);
+                const im = new Image();
+                im.onload = () => {
+                    try {
+                        const w = im.naturalWidth || 256;
+                        const h = im.naturalHeight || 256;
+                        const canvas = document.createElement("canvas");
+                        canvas.width = w;
+                        canvas.height = h;
+                        const ctx = canvas.getContext("2d");
+                        ctx.drawImage(im, 0, 0, w, h);
+                        const data = ctx.getImageData(0, 0, w, h);
+                        const d = data.data;
+                        for (let i = 0; i < d.length; i += 4) {
+                            const intensity = Math.max(d[i], d[i + 1], d[i + 2]);
+                            d[i] = PERSONAL_RGB[0];
+                            d[i + 1] = PERSONAL_RGB[1];
+                            d[i + 2] = PERSONAL_RGB[2];
+                            d[i + 3] =
+                                intensity <= PERSONAL_ALPHA_THRESHOLD
+                                    ? 0
+                                    : Math.min(
+                                          255,
+                                          Math.round(intensity * PERSONAL_ALPHA_GAIN) + PERSONAL_ALPHA_FLOOR
+                                      );
+                        }
+                        ctx.putImageData(data, 0, 0);
+                        canvas.toBlob((out) => done(out ? URL.createObjectURL(out) : ""), "image/png");
+                    } catch (_) {
+                        done("");
+                    }
+                };
+                im.onerror = () => done("");
+                im.src = srcUrl;
+            } catch (_) {
+                done("");
+            }
+        });
+    }
+
+    function loadTile(img, layer, z, x, y, seq) {
+        const url =
+            layer.kind === "personal"
+                ? buildPersonalUrl(layer.sport, z, x, y)
+                : buildGlobalUrl(layer.sport, z, x, y);
+        if (!url) {
+            return;
+        }
+        const mem = memGet(url);
+        if (mem) {
+            img.src = mem;
+            return;
+        }
+        const persist = layer.kind === "global";
+        (async () => {
+            if (persist) {
+                const hit = await idbGet(url);
+                if (seq !== renderSeq) {
+                    return;
+                }
+                if (hit && hit.blob && Date.now() - (hit.ts || 0) < GLOBAL_TILE_TTL_MS) {
+                    const u = URL.createObjectURL(hit.blob);
+                    memPut(url, u);
+                    img.src = u;
+                    return;
+                }
+            }
+            const res = await fetchTileViaSW(url);
+            if (seq !== renderSeq) {
+                return; // a newer render superseded this tile
+            }
+            if (!res.ok || !res.blob) {
+                if (res.status === 401 || res.status === 403) {
+                    noteAuthFailure();
+                }
+                return;
+            }
+            if (layer.kind === "personal") {
+                const recolored = await recolorToBlue(res.blob);
+                if (seq !== renderSeq) {
+                    return;
+                }
+                const u = recolored || URL.createObjectURL(res.blob);
+                memPut(url, u);
+                img.src = u;
+            } else {
+                const u = URL.createObjectURL(res.blob);
+                memPut(url, u);
+                idbPut(url, res.blob);
+                img.src = u;
+            }
+        })();
+    }
+
+    // ---- Overlay elements ----------------------------------------------------
+    function ensureElements() {
+        if (!overlayRoot) {
+            overlayRoot = document.createElement("div");
+            overlayRoot.id = "msh-overlay-root";
+            Object.assign(overlayRoot.style, {
+                position: "fixed",
+                left: "0px",
+                top: "0px",
+                width: "0px",
+                height: "0px",
+                pointerEvents: "none",
+                zIndex: "2147483646",
+                opacity: String(clamp(opacity / 100, 0, 1)),
+                display: overlayEnabled ? "block" : "none",
+            });
+            document.body.appendChild(overlayRoot);
+        }
+        const rect = getMapViewportRect();
+        overlayRoot.style.left = `${rect.left}px`;
+        overlayRoot.style.top = `${rect.top}px`;
+        overlayRoot.style.width = `${rect.width}px`;
+        overlayRoot.style.height = `${rect.height}px`;
+
+        if (!globalLayer) {
+            globalLayer = document.createElement("div");
+            Object.assign(globalLayer.style, { position: "absolute", inset: "0", overflow: "hidden" });
+            overlayRoot.appendChild(globalLayer);
+        }
+        if (!personalLayer) {
+            personalLayer = document.createElement("div");
+            Object.assign(personalLayer.style, { position: "absolute", inset: "0", overflow: "hidden" });
+            overlayRoot.appendChild(personalLayer); // on top of global
+        }
+        ensurePanel();
+    }
+
+    function clearLayers() {
+        if (globalLayer) {
+            globalLayer.replaceChildren();
+        }
+        if (personalLayer) {
+            personalLayer.replaceChildren();
+        }
+    }
+
+    function getActiveLayers() {
+        const layers = [];
+        if (globalMode !== "off") {
+            layers.push({ kind: "global", sport: globalMode });
+        }
+        if (personalOn && athleteId) {
+            layers.push({ kind: "personal", sport: globalMode === "off" ? lastBikeSport : globalMode });
+        }
+        return layers;
+    }
+
+    function drawTiles(state) {
+        renderSeq += 1;
+        const seq = renderSeq;
+        const rect = getMapViewportRect();
+        const width = rect.width;
+        const height = rect.height;
+        const zoomFloat = clamp(state.zoom, MIN_ZOOM, MAX_ZOOM);
+        const tileZoom = Math.min(Math.floor(zoomFloat), GLOBAL_MAX_ZOOM);
+        const scale = Math.pow(2, zoomFloat - tileZoom);
+        const centerPxX = lonToTileX(state.lon, tileZoom) * 256;
+        const centerPxY = latToTileY(state.lat, tileZoom) * 256;
+        const topLeftPxX = centerPxX - width / (2 * scale);
+        const topLeftPxY = centerPxY - height / (2 * scale);
+        const startX = Math.floor(topLeftPxX / 256) - 1;
+        const startY = Math.floor(topLeftPxY / 256) - 1;
+        const endX = Math.floor((topLeftPxX + width / scale) / 256) + 1;
+        const endY = Math.floor((topLeftPxY + height / scale) / 256) + 1;
+        const maxTileY = Math.pow(2, tileZoom) - 1;
+
+        clearLayers();
+        const layers = getActiveLayers();
+        for (const layer of layers) {
+            const div = layer.kind === "personal" ? personalLayer : globalLayer;
+            for (let ty = startY; ty <= endY; ty += 1) {
+                if (ty < 0 || ty > maxTileY) {
+                    continue;
+                }
+                for (let tx = startX; tx <= endX; tx += 1) {
+                    const img = document.createElement("img");
+                    img.alt = "";
+                    img.draggable = false;
+                    Object.assign(img.style, {
+                        position: "absolute",
+                        left: `${(tx * 256 - topLeftPxX) * scale}px`,
+                        top: `${(ty * 256 - topLeftPxY) * scale}px`,
+                        width: `${256 * scale}px`,
+                        height: `${256 * scale}px`,
+                        imageRendering: "auto",
+                        userSelect: "none",
+                    });
+                    loadTile(img, layer, tileZoom, tx, ty, seq);
+                    div.appendChild(img);
+                }
+            }
+        }
+    }
+
+    function stateKey(state) {
+        const rect = getMapViewportRect();
+        return [
+            state.zoom.toFixed(4),
+            state.lat.toFixed(6),
+            state.lon.toFixed(6),
+            Math.round(rect.width),
+            Math.round(rect.height),
+            Math.round(rect.left),
+            Math.round(rect.top),
+            overlayEnabled ? "1" : "0",
+            globalMode,
+            personalOn ? "1" : "0",
+            lastBikeSport,
+            opacity,
+            athleteId,
+        ].join("|");
+    }
+
+    function render() {
+        const state = parseMapyState();
+        ensureElements();
+        if (!state || !overlayEnabled) {
+            if (overlayRoot) {
+                overlayRoot.style.display = "none";
+            }
+            return;
+        }
+        overlayRoot.style.display = "block";
+        overlayRoot.style.opacity = String(clamp(opacity / 100, 0, 1));
+        const key = stateKey(state);
+        if (key === lastStateKey) {
+            return;
+        }
+        lastStateKey = key;
+        drawTiles(state);
+    }
+
+    function requestRender() {
+        if (rafId !== null) {
+            return;
+        }
+        rafId = requestAnimationFrame(() => {
+            rafId = null;
+            render();
+        });
+    }
+
+    // ---- On-map control panel ------------------------------------------------
+    function ensurePanel() {
+        if (panelRoot) {
+            return;
+        }
+        panelRoot = document.createElement("div");
+        panelRoot.id = "msh-panel";
+        panelRoot.innerHTML = [
+            '<div class="msh-title"><span class="msh-dot"></span>Strava heat</div>',
+            '<div class="msh-row">',
+            '  <button class="msh-btn" data-act="global">Global: MTB</button>',
+            '  <button class="msh-btn" data-act="personal">Personal: off</button>',
+            "</div>",
+            '<div class="msh-row msh-op">',
+            '  <span>Opacity</span>',
+            '  <input class="msh-slider" type="range" min="0" max="100" step="10" />',
+            "</div>",
+            '<div class="msh-hint"></div>',
+        ].join("");
+        document.body.appendChild(panelRoot);
+
+        panelRoot.querySelector('[data-act="global"]').addEventListener("click", cycleGlobal);
+        panelRoot.querySelector('[data-act="personal"]').addEventListener("click", togglePersonal);
+        const slider = panelRoot.querySelector(".msh-slider");
+        slider.value = String(opacity);
+        slider.addEventListener("input", (e) => setOpacity(parseInt(e.target.value, 10)));
+        renderPanel();
+    }
+
+    function renderPanel() {
+        if (!panelRoot) {
+            return;
+        }
+        const g = panelRoot.querySelector('[data-act="global"]');
+        const p = panelRoot.querySelector('[data-act="personal"]');
+        const hint = panelRoot.querySelector(".msh-hint");
+        const slider = panelRoot.querySelector(".msh-slider");
+        if (g) {
+            const gl = { mtb: "Global: MTB", road: "Global: Road", off: "Global: off" };
+            g.textContent = gl[globalMode];
+            g.classList.toggle("msh-btn--global", globalMode !== "off");
+            g.classList.toggle("msh-btn--off", globalMode === "off");
+        }
+        if (p) {
+            p.textContent = personalOn ? "Personal: on" : "Personal: off";
+            p.classList.toggle("msh-btn--personal", personalOn);
+            p.classList.toggle("msh-btn--off", !personalOn);
+        }
+        if (slider) {
+            slider.value = String(opacity);
+        }
+        if (hint) {
+            hint.textContent = athleteId
+                ? "Keys: A overlay · S global · D personal"
+                : "Personal: log in to Strava, then reload";
+        }
+    }
+
+    // ---- Actions -------------------------------------------------------------
+    function cycleGlobal() {
+        const order = ["mtb", "road", "off"];
+        globalMode = order[(order.indexOf(globalMode) + 1) % order.length];
+        if (globalMode !== "off") {
+            lastBikeSport = globalMode;
+        }
+        lsSet("globalMode", globalMode);
+        lastStateKey = "";
+        renderPanel();
+        requestRender();
+    }
+    function togglePersonal() {
+        personalOn = !personalOn;
+        lsSet("personalOn", personalOn ? "1" : "0");
+        lastStateKey = "";
+        if (personalOn && !athleteId) {
+            toast("Personal heatmap: log in to Strava (Subscriber) and reload to enable.");
+        }
+        renderPanel();
+        requestRender();
+    }
+    function toggleOverlay() {
+        overlayEnabled = !overlayEnabled;
+        requestRender();
+    }
+    function setOpacity(v) {
+        opacity = clamp(v || 0, 0, 100);
+        lsSet("opacity", opacity);
+        if (overlayRoot) {
+            overlayRoot.style.opacity = String(opacity / 100);
+        }
+        renderPanel();
+    }
+
+    // ---- Toast ---------------------------------------------------------------
+    function toast(message) {
+        const text = String(message || "");
+        if (!text) {
+            return;
+        }
+        const el = document.createElement("div");
+        el.className = "msh-toast";
+        el.textContent = text;
+        document.body.appendChild(el);
+        window.setTimeout(() => el.remove(), 4000);
+    }
+
+    // ---- Observers + hotkeys -------------------------------------------------
+    function installObservers() {
+        const op = window.history.pushState;
+        const or = window.history.replaceState;
+        window.history.pushState = function (...a) {
+            const out = op.apply(this, a);
+            requestRender();
+            return out;
+        };
+        window.history.replaceState = function (...a) {
+            const out = or.apply(this, a);
+            requestRender();
+            return out;
+        };
+        window.addEventListener("popstate", requestRender);
+        window.addEventListener("hashchange", requestRender);
+        window.addEventListener("resize", requestRender);
+        window.setInterval(requestRender, 250);
+    }
+
+    function installHotkeys() {
+        window.addEventListener(
+            "keydown",
+            (event) => {
+                if (event.repeat || event.ctrlKey || event.metaKey || event.altKey) {
+                    return;
+                }
+                const t = event.target;
+                const tag = t && t.tagName ? String(t.tagName).toLowerCase() : "";
+                if (tag === "input" || tag === "textarea" || tag === "select" || (t && t.isContentEditable)) {
+                    return;
+                }
+                const key = String(event.key || "").toLowerCase();
+                if (key === "a") {
+                    event.preventDefault();
+                    toggleOverlay();
+                } else if (key === "s") {
+                    event.preventDefault();
+                    cycleGlobal();
+                } else if (key === "d") {
+                    event.preventDefault();
+                    togglePersonal();
+                } else if (event.key === "[") {
+                    event.preventDefault();
+                    setOpacity(opacity - 10);
+                } else if (event.key === "]") {
+                    event.preventDefault();
+                    setOpacity(opacity + 10);
+                }
+            },
+            { capture: true }
+        );
+    }
+
+    // ---- Boot ----------------------------------------------------------------
+    installObservers();
+    installHotkeys();
+    requestRender();
+})();

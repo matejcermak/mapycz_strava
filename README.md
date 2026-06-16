@@ -1,14 +1,63 @@
-# Mapy + Strava Heatmap Overlay
+# Strava Heatmap for Mapy.cz
 
-This repo includes:
+Overlay your **Strava heatmaps** on [mapy.cz](https://mapy.cz) for bike route
+planning — the **global per-sport heatmap** (MTB / road, in *hot*) plus your own
+**personal heatmap** (in blue), shown together over the real map.
 
-- `mapy_strava_overlay.user.js` — Tampermonkey userscript that overlays
-  Strava global heatmap (or Waymarked Trails MTB routes) on `mapy.com`
-  while keeping all native Mapy controls
-- `index.html` / `app.js` / `styles.css` — small standalone demo planner
-  (not needed for the userscript flow)
+Two ways to run it:
 
-## Real Mapy Overlay
+- **`extension/`** — a **Chrome extension** (Manifest V3). The easy, one-click
+  way; this is what goes to the Chrome Web Store. See **[Chrome extension](#chrome-extension)**.
+- **`mapy_strava_overlay.user.js`** — the original **Tampermonkey userscript**
+  for power users (also does Waymarked Trails layers, GPX→Ride with GPS export,
+  etc.). See **[Userscript](#userscript-tampermonkey)**.
+
+You need to be **logged in to Strava** in the same browser. The global heatmap
+above zoom 11 and the personal heatmap require a **Strava Subscription**.
+
+---
+
+## Chrome extension
+
+### Install (development / unpacked, until it's on the Web Store)
+
+1. Clone/download this repo.
+2. Chrome → `chrome://extensions` → enable **Developer mode** (top right).
+3. **Load unpacked** → select the `extension/` folder.
+4. Make sure you're **logged in to Strava** in the same browser (open
+   `strava.com` once). Click the extension icon → it auto-detects your athlete ID
+   (or paste it manually from your `strava.com/athletes/<id>` profile URL).
+5. Open [mapy.cz](https://mapy.cz) — use the **on-map panel** (bottom-left) or the
+   keys below.
+
+### Controls
+
+- On-map panel (bottom-left): **Global** button cycles MTB → Road → off,
+  **Personal** toggles your blue heatmap, plus an opacity slider.
+- Hotkeys: `A` overlay on/off · `S` global cycle · `D` personal toggle ·
+  `[` / `]` opacity.
+
+### How it works
+
+- A **service worker** (`background.js`) fetches Strava heatmap tiles with your
+  logged-in cookies (`host_permissions` for `*.strava.com`) — content scripts
+  can't do credentialed cross-origin fetches in MV3, the worker can.
+- `content.js` renders two stacked tile layers over Mapy's map, caches global
+  tiles in IndexedDB (instant on reopen) and everything in memory, and
+  canvas-recolors the personal tiles (Strava serves them as opaque black) to a
+  transparent blue overlay.
+- Endpoints: global `content-a.strava.com/identified/globalheat/sport_*/hot/...`,
+  personal `personal-heatmaps-external.strava.com/tiles/<athleteId>/...`.
+
+### Privacy
+
+The extension only talks to Strava (to fetch your heatmap tiles, using cookies
+already in your browser) and stores small settings locally. It sends nothing to
+any third party. See [PRIVACY.md](PRIVACY.md).
+
+---
+
+## Userscript (Tampermonkey)
 
 ### Setup
 

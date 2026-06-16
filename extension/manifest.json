@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "Strava Heatmap for Mapy.cz",
+  "version": "0.1.0",
+  "description": "Overlay your Strava global (MTB/road) and personal heatmaps on Mapy.cz for bike route planning.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "permissions": ["storage", "unlimitedStorage"],
+  "host_permissions": ["*://*.strava.com/*"],
+  "content_scripts": [
+    {
+      "matches": [
+        "*://mapy.cz/*",
+        "*://*.mapy.cz/*",
+        "*://mapy.com/*",
+        "*://*.mapy.com/*"
+      ],
+      "js": ["content.js"],
+      "css": ["panel.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Strava Heatmap for Mapy.cz",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  }
+}
