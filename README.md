@@ -47,8 +47,9 @@ above zoom 11 and the personal heatmap require a **Strava Subscription**.
 
 On-map panel (bottom-left):
 
-- **(A) Heatmaps** — master on/off switch; turns both layers off (and back on).
-- **(S) Global** — cycles **MTB → Ride → Run → off** (in *hot*).
+- **(A) Heatmaps** — master on/off switch; hides both layers (greying them) and
+  brings them back, keeping your sport choice.
+- **(S) Global** — cycles **MTB → Ride → Run** (in *hot*); hide it with **(A)**.
 - **(D) Personal** — toggles your heatmap (in *blue*); it follows the sport
   selected in Global.
 - Opacity slider.
