@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Heatmapy — Strava heatmaps on Mapy.com</title>
+<meta name="description" content="Free Chrome extension: overlay your Strava global and personal heatmaps (MTB / Ride / Run) on Mapy.com — the best map for route planning. Discover roads you've never explored." />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'><rect width='40' height='40' rx='11' fill='%2315151a'/><path d='M7 27C16 20 17 12 24 10 31 8 33 19 38 13' fill='none' stroke='%23fc5200' stroke-width='4.5' stroke-linecap='round'/><path d='M6 33C16 30 22 22 28 23 34 24 35 31 39 29' fill='none' stroke='%231e90ff' stroke-width='3.4' stroke-linecap='round'/></svg>" />
+<style>
+    :root {
+        --orange: #fc5200;
+        --orange-d: #e04800;
+        --blue: #1e90ff;
+        --blue-d: #176fd0;
+        --ink: #16161d;
+        --muted: #5b5b66;
+        --line: #ececf1;
+        --bg: #ffffff;
+        --bg-soft: #faf8f6;
+        --radius: 14px;
+        --shadow: 0 10px 30px rgba(20, 20, 30, 0.10);
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+        margin: 0;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        color: var(--ink);
+        background: var(--bg);
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+    }
+    a { color: inherit; }
+    .wrap { max-width: 1080px; margin: 0 auto; padding: 0 22px; }
+
+    /* nav */
+    header {
+        position: sticky; top: 0; z-index: 50;
+        background: rgba(255, 255, 255, 0.86);
+        backdrop-filter: saturate(1.4) blur(8px);
+        border-bottom: 1px solid var(--line);
+    }
+    .nav { display: flex; align-items: center; gap: 14px; height: 62px; }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 19px; letter-spacing: -0.02em; }
+    .brand .heat { color: var(--orange); }
+    .brand .mapy { color: var(--blue); }
+    .nav .spacer { flex: 1; }
+    .nav a.ghost { color: var(--muted); text-decoration: none; font-weight: 600; font-size: 14px; }
+    .nav a.ghost:hover { color: var(--ink); }
+
+    .btn {
+        display: inline-flex; align-items: center; gap: 8px;
+        border: 0; border-radius: 10px; cursor: pointer;
+        font: inherit; font-weight: 700; font-size: 15px;
+        padding: 11px 16px; text-decoration: none; white-space: nowrap;
+        transition: transform 0.06s ease, box-shadow 0.15s ease, background 0.15s ease;
+    }
+    .btn:active { transform: translateY(1px); }
+    .btn--chrome { background: var(--blue); color: #fff; box-shadow: 0 6px 16px rgba(30, 144, 255, 0.32); }
+    .btn--chrome:hover { background: var(--blue-d); }
+    .btn--coffee { background: var(--orange); color: #fff; box-shadow: 0 6px 16px rgba(252, 82, 0, 0.30); }
+    .btn--coffee:hover { background: var(--orange-d); }
+    .btn--ghost { background: #fff; color: var(--ink); border: 1.5px solid var(--line); }
+    .btn--ghost:hover { border-color: #cfcfd8; }
+    .btn--sm { padding: 8px 13px; font-size: 14px; }
+    .btn svg { width: 18px; height: 18px; }
+
+    /* hero */
+    .hero { padding: 64px 0 36px; text-align: center; background:
+        radial-gradient(900px 380px at 50% -120px, rgba(252,82,0,0.10), transparent 70%),
+        radial-gradient(700px 360px at 85% 0, rgba(30,144,255,0.10), transparent 70%); }
+    .eyebrow {
+        display: inline-flex; align-items: center; gap: 7px;
+        font-size: 13px; font-weight: 700; color: var(--orange);
+        background: #fff; border: 1px solid #ffd9c7; border-radius: 999px;
+        padding: 5px 13px; margin-bottom: 18px;
+    }
+    h1 { font-size: clamp(32px, 5.2vw, 52px); line-height: 1.05; letter-spacing: -0.03em; margin: 0 auto 16px; max-width: 13ch; }
+    h1 .g { background: linear-gradient(90deg, var(--orange), #ff8a3d); -webkit-background-clip: text; background-clip: text; color: transparent; }
+    .sub { font-size: clamp(16px, 2.2vw, 19px); color: var(--muted); max-width: 640px; margin: 0 auto 26px; }
+    .cta-row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-bottom: 12px; }
+    .fineprint { font-size: 13px; color: var(--muted); }
+    .fineprint b { color: var(--ink); }
+
+    /* video */
+    .video {
+        position: relative; max-width: 880px; margin: 34px auto 0;
+        aspect-ratio: 16 / 9; border-radius: 18px; overflow: hidden;
+        box-shadow: var(--shadow); border: 1px solid var(--line);
+        background: #0e0e12 center/cover no-repeat;
+    }
+    .video img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: saturate(1.05); }
+    .video .scrim { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0.05), rgba(0,0,0,0.45)); }
+    .video .play {
+        position: absolute; inset: 0; margin: auto; width: 78px; height: 78px;
+        display: flex; align-items: center; justify-content: center;
+        background: rgba(255,255,255,0.92); border-radius: 999px; box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+    }
+    .video .play::after { content: ""; border-left: 22px solid var(--orange); border-top: 13px solid transparent; border-bottom: 13px solid transparent; margin-left: 6px; }
+    .video .vlabel { position: absolute; left: 0; right: 0; bottom: 16px; text-align: center; color: #fff; font-weight: 700; font-size: 14px; text-shadow: 0 1px 6px rgba(0,0,0,0.6); }
+
+    /* sections */
+    section.block { padding: 56px 0; }
+    section.soft { background: var(--bg-soft); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+    .kicker { color: var(--orange); font-weight: 800; font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; text-align: center; }
+    h2 { font-size: clamp(24px, 3.6vw, 34px); letter-spacing: -0.02em; text-align: center; margin: 8px auto 8px; max-width: 18ch; }
+    .lead { text-align: center; color: var(--muted); max-width: 620px; margin: 0 auto 34px; }
+
+    .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
+    .card { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 20px 20px 22px; }
+    .card .ic { width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; margin-bottom: 12px; }
+    .card h3 { margin: 0 0 6px; font-size: 17px; }
+    .card p { margin: 0; color: var(--muted); font-size: 15px; }
+    .ic-o { background: rgba(252,82,0,0.12); color: var(--orange); }
+    .ic-b { background: rgba(30,144,255,0.12); color: var(--blue); }
+
+    .shots { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 6px; }
+    .shots figure { margin: 0; }
+    .shots img { width: 100%; border-radius: var(--radius); border: 1px solid var(--line); box-shadow: var(--shadow); display: block; }
+    .shots figcaption { text-align: center; color: var(--muted); font-size: 13px; margin-top: 8px; }
+
+    /* final cta */
+    .final { text-align: center; }
+    .final .badges { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 22px; }
+    .maintain { display: inline-flex; align-items: center; gap: 11px; margin: 24px auto 0; max-width: 600px;
+        background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 13px 17px;
+        font-size: 14px; color: var(--muted); text-align: left; box-shadow: 0 4px 14px rgba(20,20,30,0.05); }
+    .maintain b { color: var(--ink); }
+    .maintain a { color: var(--orange); font-weight: 700; text-decoration: none; white-space: nowrap; }
+    .maintain a:hover { text-decoration: underline; }
+    .dot-pulse { width: 9px; height: 9px; border-radius: 50%; background: #21c55d; flex: 0 0 auto;
+        box-shadow: 0 0 0 0 rgba(33,197,93,0.5); animation: pulse 1.8s infinite; }
+    @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(33,197,93,0.45);} 70% { box-shadow: 0 0 0 9px rgba(33,197,93,0);} 100% { box-shadow: 0 0 0 0 rgba(33,197,93,0);} }
+
+    footer { border-top: 1px solid var(--line); padding: 26px 0 40px; color: var(--muted); font-size: 13px; }
+    .foot { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+    .foot .spacer { flex: 1; }
+    footer a { color: var(--muted); text-decoration: none; }
+    footer a:hover { color: var(--ink); }
+    .disclaim { margin-top: 12px; font-size: 12px; opacity: 0.85; }
+
+    @media (max-width: 720px) {
+        .grid, .shots { grid-template-columns: 1fr; }
+        .nav a.ghost.hide-sm { display: none; }
+    }
+</style>
+</head>
+<body>
+<!-- inline logo mark, reused below -->
+<svg width="0" height="0" style="position:absolute"><defs>
+    <linearGradient id="hot" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fc5200"/><stop offset="1" stop-color="#ffb300"/></linearGradient>
+    <symbol id="mark" viewBox="0 0 40 40">
+        <rect x="1" y="1" width="38" height="38" rx="11" fill="#15151a"/>
+        <path d="M7 27 C16 20, 17 12, 24 10 C31 8, 33 19, 38 13" fill="none" stroke="url(#hot)" stroke-width="4.5" stroke-linecap="round"/>
+        <path d="M6 33 C16 30, 22 22, 28 23 C34 24, 35 31, 39 29" fill="none" stroke="#1e90ff" stroke-width="3.4" stroke-linecap="round"/>
+    </symbol>
+</defs></svg>
+
+<header>
+    <div class="wrap nav">
+        <span class="brand"><svg width="28" height="28"><use href="#mark"/></svg><span><span class="heat">Heat</span><span class="mapy">mapy</span></span></span>
+        <span class="spacer"></span>
+        <a class="ghost hide-sm" href="#why">Why Mapy</a>
+        <a class="ghost hide-sm" href="#extension">Extension</a>
+        <a class="ghost" href="https://github.com/matejcermak/mapycz_strava" target="_blank" rel="noopener">GitHub</a>
+        <a class="btn btn--chrome btn--sm" href="#get" data-cta="chrome">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 1 8.66 5H12a5 5 0 0 0-4.33 2.5L4.2 4.8A10 10 0 0 1 12 2Zm9.5 6.5A10 10 0 0 1 12 22l4.33-7.5A5 5 0 0 0 12 7h9.5ZM2.5 6.6 6.83 14A5 5 0 0 0 12 17l-1.7 5A10 10 0 0 1 2.5 6.6ZM12 9a3 3 0 1 1 0 6 3 3 0 0 1 0-6Z"/></svg>
+            Get the Chrome Extension
+        </a>
+    </div>
+</header>
+
+<main>
+    <!-- HERO -->
+    <section class="hero">
+        <div class="wrap">
+            <span class="eyebrow">● Free Chrome extension</span>
+            <h1>Strava heat, on the map that's <span class="g">actually good at planning</span>.</h1>
+            <p class="sub">Overlay your Strava global <b>and</b> personal heatmaps on <b>Mapy.com</b> — switch
+                MTB / Ride / Run, and spot the roads and trails you've never explored yet.</p>
+            <div class="cta-row">
+                <a class="btn btn--chrome" href="#get" data-cta="chrome">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 1 8.66 5H12a5 5 0 0 0-4.33 2.5L4.2 4.8A10 10 0 0 1 12 2Zm9.5 6.5A10 10 0 0 1 12 22l4.33-7.5A5 5 0 0 0 12 7h9.5ZM2.5 6.6 6.83 14A5 5 0 0 0 12 17l-1.7 5A10 10 0 0 1 2.5 6.6ZM12 9a3 3 0 1 1 0 6 3 3 0 0 1 0-6Z"/></svg>
+                    Get the Chrome Extension
+                </a>
+                <a class="btn btn--coffee" href="#get" data-cta="coffee">☕ Buy me a coffee · 50 Kč</a>
+            </div>
+            <p class="fineprint"><b>Free</b> &nbsp;·&nbsp; open source &nbsp;·&nbsp; no account needed to use the map</p>
+
+            <div class="video">
+                <img src="img/hero.png" alt="Strava heatmap overlaid on Mapy.com" />
+                <div class="scrim"></div>
+                <div class="play" aria-hidden="true"></div>
+                <div class="vlabel">▶ 60-second demo — video coming soon</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- WHY MAPY -->
+    <section class="block soft" id="why">
+        <div class="wrap">
+            <div class="kicker">Why Mapy.com</div>
+            <h2>A map built for the outdoors — and for planning</h2>
+            <p class="lead">Strava's base map is thin. Mapy.com's outdoor map shows what actually matters when you're
+                choosing where to go.</p>
+            <div class="grid">
+                <div class="card">
+                    <div class="ic ic-o">⛰️</div>
+                    <h3>See the terrain</h3>
+                    <p>Gradient shading and contours — tell at a glance if it's hilly, forested, or flat, before you commit.</p>
+                </div>
+                <div class="card">
+                    <div class="ic ic-o">🛤️</div>
+                    <h3>Every path that exists</h3>
+                    <p>From motorways to the tiniest forest singletrack in the middle of nowhere — and you can tell which is which.</p>
+                </div>
+                <div class="card">
+                    <div class="ic ic-b">🚧</div>
+                    <h3>Fresh, real data</h3>
+                    <p>Road types, surfaces, and up-to-date closures — so your "shortcut" isn't a dead end or a highway.</p>
+                </div>
+                <div class="card">
+                    <div class="ic ic-b">🧭</div>
+                    <h3>Smarter planning</h3>
+                    <p>Sticks to real routes, ⌘/Ctrl-click to drop points fast, and respects MTB vs road riding.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- EXTENSION -->
+    <section class="block" id="extension">
+        <div class="wrap">
+            <div class="kicker">The extension</div>
+            <h2>Now with the best thing about Strava: everyone's heat</h2>
+            <p class="lead">Combine Mapy.com's planning with Strava's crowd data. Switch the <b>global</b> heat between
+                <b>MTB / Ride / Run</b>, then overlay <b>your own</b> heat in blue — and instantly see roads the locals
+                know that you haven't ridden yet.</p>
+            <div class="shots">
+                <figure>
+                    <img src="img/mtb.png" alt="Global MTB heat with personal heat overlaid" />
+                    <figcaption>Global MTB heat (orange) + your personal heat (blue)</figcaption>
+                </figure>
+                <figure>
+                    <img src="img/ride.png" alt="Global Ride heat on Mapy.com" />
+                    <figcaption>Switch to Ride or Run with one key</figcaption>
+                </figure>
+            </div>
+        </div>
+    </section>
+
+    <!-- GET -->
+    <section class="block soft final" id="get">
+        <div class="wrap">
+            <div class="kicker">Get it</div>
+            <h2>Install it, plan your next ride — for free</h2>
+            <p class="lead">One click to add it to Chrome. If it saves you time, a 50 Kč coffee keeps it alive.</p>
+            <div class="badges">
+                <a class="btn btn--chrome" href="#" data-cta="chrome" id="chromeLink">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 1 8.66 5H12a5 5 0 0 0-4.33 2.5L4.2 4.8A10 10 0 0 1 12 2Zm9.5 6.5A10 10 0 0 1 12 22l4.33-7.5A5 5 0 0 0 12 7h9.5ZM2.5 6.6 6.83 14A5 5 0 0 0 12 17l-1.7 5A10 10 0 0 1 2.5 6.6ZM12 9a3 3 0 1 1 0 6 3 3 0 0 1 0-6Z"/></svg>
+                    Get the Chrome Extension
+                </a>
+                <a class="btn btn--coffee" href="#" data-cta="coffee" id="coffeeLink">☕ Buy me a coffee · 50 Kč</a>
+                <a class="btn btn--ghost" href="https://github.com/matejcermak/mapycz_strava" target="_blank" rel="noopener">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 1.5A10.5 10.5 0 0 0 8.7 22c.5.1.7-.2.7-.5v-1.7c-2.9.6-3.5-1.4-3.5-1.4-.5-1.2-1.2-1.5-1.2-1.5-.9-.6.1-.6.1-.6 1 .1 1.6 1 1.6 1 .9 1.6 2.4 1.1 3 .9.1-.7.4-1.1.6-1.4-2.3-.3-4.7-1.2-4.7-5.1 0-1.1.4-2 1-2.7-.1-.3-.5-1.3.1-2.7 0 0 .9-.3 2.8 1a9.6 9.6 0 0 1 5 0c1.9-1.3 2.8-1 2.8-1 .6 1.4.2 2.4.1 2.7.7.7 1 1.6 1 2.7 0 3.9-2.4 4.8-4.7 5.1.4.3.7.9.7 1.9v2.8c0 .3.2.6.7.5A10.5 10.5 0 0 0 12 1.5Z"/></svg>
+                    View on GitHub
+                </a>
+            </div>
+            <p class="fineprint" style="margin-top:18px;">Works in Chrome, Brave, Edge &amp; Opera · needs you logged in to Strava (Subscription for high-zoom &amp; personal heat)</p>
+            <div class="maintain">
+                <span class="dot-pulse" aria-hidden="true"></span>
+                <span><b>Actively maintained.</b> I fix bugs and ship improvements regularly — hit one, or have an idea?
+                    <a href="https://github.com/matejcermak/mapycz_strava/issues" target="_blank" rel="noopener">Open a GitHub issue →</a></span>
+            </div>
+        </div>
+    </section>
+</main>
+
+<footer>
+    <div class="wrap">
+        <div class="foot">
+            <span class="brand"><svg width="22" height="22"><use href="#mark"/></svg><span><span class="heat">Heat</span><span class="mapy">mapy</span></span></span>
+            <span class="spacer"></span>
+            <a href="https://github.com/matejcermak/mapycz_strava" target="_blank" rel="noopener">GitHub</a>
+            <a href="https://github.com/matejcermak/mapycz_strava/issues" target="_blank" rel="noopener">Issues &amp; feedback</a>
+            <a href="https://github.com/matejcermak/mapycz_strava/blob/main/PRIVACY.md" target="_blank" rel="noopener">Privacy</a>
+            <a href="#get">Donate</a>
+        </div>
+        <p class="disclaim">An independent project — not affiliated with Strava or Mapy.com. Heat data © Strava; maps © Mapy.com / Seznam.cz.</p>
+    </div>
+</footer>
+
+<script>
+    // ===== Edit these two links when ready =====
+    const CHROME_URL = "https://chromewebstore.google.com/"; // TODO: published extension URL
+    const STRIPE_URL = "https://donate.stripe.com/REPLACE_ME"; // TODO: Stripe Payment Link, 50 Kč preset, Apple/Google Pay on
+    document.querySelectorAll('[data-cta="chrome"]').forEach((a) => { a.href = CHROME_URL; a.target = "_blank"; a.rel = "noopener"; });
+    document.querySelectorAll('[data-cta="coffee"]').forEach((a) => { a.href = STRIPE_URL; a.target = "_blank"; a.rel = "noopener"; });
+</script>
+</body>
+</html>
