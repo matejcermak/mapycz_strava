@@ -7,7 +7,7 @@ you've never ridden or run yet — on the map with the best route planning aroun
 
 ![Demo](assets/demo.gif)
 
-| Global MTB + your personal heat | Global Ride + your personal heat |
+| Global MTB + your personal heat | Global Ride map |
 | --- | --- |
 | ![MTB + personal](assets/screenshot-mtb-personal.png) | ![Ride + personal](assets/screenshot-ride-personal.png) |
 
