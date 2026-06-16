@@ -110,6 +110,24 @@ Main controls are a left-hand cluster: **A S D**.
 - `[` / `]` — decrease / increase opacity in 10% steps
 - `Alt + D` — toggle debug panel
 
+#### Getting the downloaded route onto your bike computer
+
+`E` gives you a plain GPX — no Strava/Komoot/RWGPS account needed. Import it into
+your device's **own** app:
+
+- **Garmin** (desktop-friendly): [connect.garmin.com](https://connect.garmin.com)
+  → **Training → Courses → Create/Import** → upload the GPX → Save. It lands in
+  **Courses** and syncs to your Edge/watch on the next sync. (Or Garmin Connect
+  mobile → Courses → **+** → Import.)
+- **Wahoo ELEMNT** (phone): get the GPX onto your phone (AirDrop / cloud /
+  email), open it, and **Share → ELEMNT** — it imports as a route and syncs to
+  the head unit. (Wahoo has no desktop route import, so the file has to reach the
+  phone first.)
+
+A GPX is the universal currency here: it works for both without linking any
+third-party account. Fully *automatic* device sync would require linking a cloud
+account (Strava/Komoot/RWGPS) — intentionally avoided.
+
 Colors are **fixed**: global heatmaps are `hot`; personal is **blue**. The
 personal endpoint returns **opaque-black** tiles (background black, heat in
 grayscale) regardless of the requested color, so each personal tile is
