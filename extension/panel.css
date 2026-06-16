@@ -76,7 +76,22 @@
 #msh-panel .msh-hint {
     margin-top: 6px;
     font-size: 11px;
-    opacity: 0.7;
+    opacity: 0.78;
+    line-height: 1.5;
+}
+
+#msh-panel .msh-hint a {
+    color: #ffd200;
+    text-decoration: none;
+}
+
+.msh-toast--link {
+    pointer-events: auto;
+}
+
+.msh-toast--link a {
+    color: #ffd200;
+    font-weight: 600;
 }
 
 .msh-toast {

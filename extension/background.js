@@ -5,6 +5,18 @@
 
 const ATHLETE_KEY = "stravaAthleteId";
 
+// runtime messaging serializes as JSON (not structured clone), so an ArrayBuffer
+// would be lost in transit. Encode tiles as a base64 data URL string instead.
+function bufToBase64(buf) {
+    const bytes = new Uint8Array(buf);
+    let bin = "";
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+        bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+    }
+    return btoa(bin);
+}
+
 async function fetchTile(url) {
     try {
         const resp = await fetch(url, {
@@ -14,13 +26,20 @@ async function fetchTile(url) {
             },
         });
         if (!resp.ok) {
+            console.warn("[msh] tile fetch", resp.status, url);
             return { ok: false, status: resp.status };
         }
         const buf = await resp.arrayBuffer();
-        const contentType = resp.headers.get("content-type") || "";
-        return { ok: true, status: resp.status, buf, contentType };
+        const contentType = resp.headers.get("content-type") || "image/png";
+        return {
+            ok: true,
+            status: resp.status,
+            dataUrl: `data:${contentType};base64,${bufToBase64(buf)}`,
+        };
     } catch (e) {
-        return { ok: false, status: 0, error: String(e && e.message ? e.message : e) };
+        const error = String(e && e.message ? e.message : e);
+        console.warn("[msh] tile fetch error", error, url);
+        return { ok: false, status: 0, error };
     }
 }
 

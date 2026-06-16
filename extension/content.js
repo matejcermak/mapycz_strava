@@ -26,9 +26,11 @@
     const MAX_ZOOM = 22;
     const GLOBAL_TILE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
     const MEM_CACHE_MAX = 4000;
+    const IS_MAC = /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || "");
+    const ADD_POINT_HINT = (IS_MAC ? "⌘-click" : "Ctrl-click") + " the map to add a route point";
 
     // ---- State ---------------------------------------------------------------
-    let overlayEnabled = true;
+    let savedLayers = null; // remembers global/personal so A can restore them
     let globalMode = "mtb"; // "mtb" | "road" | "off"
     let personalOn = false;
     let lastBikeSport = "mtb";
@@ -277,6 +279,7 @@
     }
 
     // ---- Tile fetch (via service worker, with Strava cookies) ----------------
+    const STRAVA_HEATMAP_URL = "https://www.strava.com/maps/global-heatmap";
     let authNotifiedAt = 0;
     function noteAuthFailure() {
         const now = Date.now();
@@ -284,25 +287,31 @@
             return;
         }
         authNotifiedAt = now;
-        toast(
-            "Strava heatmap needs you logged in (and Subscription for zoom > 11).\n" +
-            "Open strava.com, log in, then reload this page."
-        );
+        const el = document.createElement("div");
+        el.className = "msh-toast msh-toast--link";
+        el.innerHTML =
+            "Strava heatmap needs you logged in " +
+            "(Subscription for zoom &gt; 11 / personal).<br>" +
+            '<a href="' + STRAVA_HEATMAP_URL + '" target="_blank" rel="noopener noreferrer">' +
+            "Open Strava heatmap ↗</a> — then reload this page.";
+        document.body.appendChild(el);
+        window.setTimeout(() => el.remove(), 9000);
     }
     function fetchTileViaSW(url) {
         return new Promise((resolve) => {
             try {
-                chrome.runtime.sendMessage({ type: "fetchTile", url }, (resp) => {
+                chrome.runtime.sendMessage({ type: "fetchTile", url }, async (resp) => {
                     if (chrome.runtime.lastError || !resp) {
                         resolve({ ok: false, status: 0 });
                         return;
                     }
-                    if (resp.ok && resp.buf) {
-                        resolve({
-                            ok: true,
-                            status: resp.status,
-                            blob: new Blob([resp.buf], { type: resp.contentType || "image/png" }),
-                        });
+                    if (resp.ok && resp.dataUrl) {
+                        try {
+                            const blob = await (await fetch(resp.dataUrl)).blob();
+                            resolve({ ok: true, status: resp.status, blob });
+                        } catch (_) {
+                            resolve({ ok: false, status: resp.status || 0 });
+                        }
                     } else {
                         resolve({ ok: false, status: resp.status || 0 });
                     }
@@ -437,7 +446,7 @@
                 pointerEvents: "none",
                 zIndex: "2147483646",
                 opacity: String(clamp(opacity / 100, 0, 1)),
-                display: overlayEnabled ? "block" : "none",
+                display: "block",
             });
             document.body.appendChild(overlayRoot);
         }
@@ -537,7 +546,6 @@
             Math.round(rect.height),
             Math.round(rect.left),
             Math.round(rect.top),
-            overlayEnabled ? "1" : "0",
             globalMode,
             personalOn ? "1" : "0",
             lastBikeSport,
@@ -549,10 +557,14 @@
     function render() {
         const state = parseMapyState();
         ensureElements();
-        if (!state || !overlayEnabled) {
+        const layers = state ? getActiveLayers() : [];
+        if (layers.length === 0) {
+            // Nothing active (e.g. A turned both off): hide + free old tiles.
             if (overlayRoot) {
                 overlayRoot.style.display = "none";
             }
+            clearLayers();
+            lastStateKey = "";
             return;
         }
         overlayRoot.style.display = "block";
@@ -627,9 +639,10 @@
             slider.value = String(opacity);
         }
         if (hint) {
-            hint.textContent = athleteId
-                ? "Keys: A overlay · S global · D personal"
-                : "Personal: log in to Strava, then reload";
+            const top = athleteId
+                ? "Keys: A off · S global · D personal · [ ] opacity"
+                : '<a href="' + STRAVA_HEATMAP_URL + '" target="_blank" rel="noopener">Log in to Strava ↗</a> to enable';
+            hint.innerHTML = top + "<br>" + ADD_POINT_HINT;
         }
     }
 
@@ -655,8 +668,26 @@
         renderPanel();
         requestRender();
     }
-    function toggleOverlay() {
-        overlayEnabled = !overlayEnabled;
+    // "A" = master switch: turn BOTH layers off (remembering them), or restore.
+    function masterToggle() {
+        if (globalMode !== "off" || personalOn) {
+            savedLayers = { globalMode, personalOn };
+            globalMode = "off";
+            personalOn = false;
+        } else if (savedLayers) {
+            globalMode = savedLayers.globalMode;
+            personalOn = savedLayers.personalOn;
+            if (globalMode !== "off") {
+                lastBikeSport = globalMode;
+            }
+        } else {
+            globalMode = "mtb";
+            lastBikeSport = "mtb";
+        }
+        lsSet("globalMode", globalMode);
+        lsSet("personalOn", personalOn ? "1" : "0");
+        lastStateKey = "";
+        renderPanel();
         requestRender();
     }
     function setOpacity(v) {
@@ -716,7 +747,7 @@
                 const key = String(event.key || "").toLowerCase();
                 if (key === "a") {
                     event.preventDefault();
-                    toggleOverlay();
+                    masterToggle();
                 } else if (key === "s") {
                     event.preventDefault();
                     cycleGlobal();
