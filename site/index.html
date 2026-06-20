@@ -326,10 +326,31 @@
 <script>
     // ===== Edit these two links when ready =====
     const CHROME_URL = "https://chromewebstore.google.com/detail/pkifpafiblikmgkcpkbdjmoapjnladok"; // live once review passes
-    // LIVE payment link (50 Kč preset, pay-what-you-want, Apple/Google Pay in checkout).
-    const STRIPE_URL = "https://donate.stripe.com/5kQ5kD6bo4oV83UcCd5J600";
     document.querySelectorAll('[data-cta="chrome"]').forEach((a) => { a.href = CHROME_URL; a.target = "_blank"; a.rel = "noopener"; });
-    document.querySelectorAll('[data-cta="coffee"]').forEach((a) => { a.href = STRIPE_URL; a.target = "_blank"; a.rel = "noopener"; });
+
+    // ===== Donations =====
+    // Stripe Adaptive Pricing does NOT convert pay-what-you-want / custom-amount links — they
+    // always show the link's base currency. So we keep one Payment Link per currency and route
+    // to the right one by the visitor's country (via Cloudflare's /cdn-cgi/trace `loc=`).
+    const DONATE_LINKS = {
+        CZK: "https://donate.stripe.com/5kQ5kD6bo4oV83UcCd5J600",  // 50 Kč preset — Czechia
+        EUR: "",   // TODO: paste EUR pay-what-you-want Payment Link
+        USD: "",   // TODO: paste USD pay-what-you-want Payment Link
+    };
+    const EUR_COUNTRIES = new Set("AT BE BG HR CY DK EE FI FR DE GR HU IE IT LV LT LU MT NL PL PT RO SE SI SK ES NO IS LI CH GB".split(" "));
+    function donateLinkFor(cc) {
+        if (cc === "CZ") return DONATE_LINKS.CZK;
+        if (EUR_COUNTRIES.has(cc)) return DONATE_LINKS.EUR || DONATE_LINKS.USD || DONATE_LINKS.CZK;
+        return DONATE_LINKS.USD || DONATE_LINKS.EUR || DONATE_LINKS.CZK;
+    }
+    function setDonate(url) {
+        document.querySelectorAll('[data-cta="coffee"]').forEach((a) => { a.href = url; a.target = "_blank"; a.rel = "noopener"; });
+    }
+    setDonate(DONATE_LINKS.CZK);  // default until the visitor's country resolves
+    fetch("/cdn-cgi/trace").then((r) => r.text()).then((t) => {
+        const cc = (t.match(/loc=([A-Z]{2})/) || [])[1];
+        if (cc) setDonate(donateLinkFor(cc));
+    }).catch(() => {});
 
     // before/after compare sliders
     document.querySelectorAll('.ba-range').forEach((r) => {
