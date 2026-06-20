@@ -138,10 +138,6 @@
     .cmp-list { display: flex; flex-direction: column; gap: 36px; margin-top: 10px; }
     .cmp h3 { margin: 0 0 5px; font-size: 19px; }
     .cmp p { margin: 0 0 14px; color: var(--muted); max-width: 760px; }
-    .cmp-shot { width: 100%; aspect-ratio: 18 / 7; border-radius: var(--radius); border: 2px dashed #d8d8e0;
-        background: #fff; display: flex; align-items: center; justify-content: center; color: #a6a6b0;
-        font-size: 14px; text-align: center; padding: 14px; }
-    .cmp-shot img { width: 100%; border-radius: var(--radius); border: 1px solid var(--line); box-shadow: var(--shadow); display: block; }
 
     /* before/after compare slider */
     .ba { position: relative; aspect-ratio: 18 / 10; border-radius: var(--radius); overflow: hidden;
@@ -300,8 +296,8 @@
                 on the left, <a class="strava-link" href="https://www.strava.com/maps/global-heatmap" target="_blank" rel="noopener">Strava</a> on the right.</p>
             <div class="cmp-list">
                 <div class="cmp">
-                    <h3>⛰️ See the terrain</h3>
-                    <p>Gradient shading and contours tell you instantly whether it's hilly or flat, forest or open — Strava's base map stays flat and bare.</p>
+                    <h3>⛰️ See the terrain — and the roads</h3>
+                    <p>Gradient shading and contours tell you instantly whether it's hilly or flat, forest or open — and busy main roads, quiet lanes, and gravel or forest tracks are each coloured differently, so your A→B isn't a highway full of cars. Strava's base map stays flat and bare.</p>
                     <div class="ba">
                         <img class="ba-img" src="img/cmp-terrain-strava.png?v=2" alt="Same area on Strava">
                         <img class="ba-img ba-top" src="img/cmp-terrain-mapy.png?v=2" alt="Same area on Mapy.com">
@@ -312,28 +308,16 @@
                     </div>
                 </div>
                 <div class="cmp">
-                    <h3>🛣️ Know the road before you ride it</h3>
-                    <p>Mapy.com colours a busy main road, a quiet lane, and a gravel or forest track differently — so your A→B isn't a highway full of cars. Strava doesn't tell them apart.</p>
-                    <!-- swap for: <img src="img/compare-roadtype.png" alt="Mapy.com vs Strava road types"> -->
-                    <div class="cmp-shot">Side-by-side screenshot — Mapy.com (left) vs Strava (right)</div>
-                </div>
-                <div class="cmp">
-                    <h3>🛤️ Every path — and what's closed</h3>
-                    <p>Every tiny trail in the middle of nowhere is on Mapy.com, with up-to-date closures. Strava's map misses the small stuff.</p>
+                    <h3>🛤️ Every path — and a smarter planner</h3>
+                    <p>Every tiny trail in the middle of nowhere is on Mapy.com, with up-to-date closures — and when you plan, it snaps to real routes (⌘/Ctrl-click to drop points) and respects MTB vs road. Strava's map misses the small stuff, and its planner is clunkier.</p>
                     <div class="ba">
-                        <img class="ba-img" src="img/cmp-paths-strava.png" alt="Same area on Strava">
-                        <img class="ba-img ba-top" src="img/cmp-paths-mapy.png" alt="Same area on Mapy.com">
+                        <img class="ba-img" src="img/cmp-paths-strava.png?v=2" alt="Same area on Strava">
+                        <img class="ba-img ba-top" src="img/cmp-paths-mapy.png?v=2" alt="Same area on Mapy.com">
                         <div class="ba-handle" aria-hidden="true"></div>
                         <span class="ba-label ba-label--l">Mapy.com</span>
                         <span class="ba-label ba-label--r">Strava</span>
                         <input class="ba-range" type="range" min="0" max="100" value="50" aria-label="Drag to compare Mapy.com and Strava">
                     </div>
-                </div>
-                <div class="cmp">
-                    <h3>🧭 Smarter route planning</h3>
-                    <p>Mapy.com snaps to real routes, ⌘/Ctrl-click drops points fast, and it respects MTB vs road. Strava's planner is clunkier and ignores the terrain.</p>
-                    <!-- swap for: <img src="img/compare-planning.png" alt="Mapy.com vs Strava route planning"> -->
-                    <div class="cmp-shot">Side-by-side screenshot — Mapy.com (left) vs Strava (right)</div>
                 </div>
             </div>
         </div>
