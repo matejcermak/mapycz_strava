@@ -100,22 +100,14 @@
     .fineprint { font-size: 13px; color: var(--muted); }
     .fineprint b { color: var(--ink); }
 
-    /* video */
+    /* hero demo video */
     .video {
         position: relative; max-width: 880px; margin: 34px auto 0;
-        aspect-ratio: 16 / 9; border-radius: 18px; overflow: hidden;
+        aspect-ratio: 1058 / 778; border-radius: 18px; overflow: hidden;
         box-shadow: var(--shadow); border: 1px solid var(--line);
         background: #0e0e12 center/cover no-repeat;
     }
-    .video img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: saturate(1.05); }
-    .video .scrim { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0.05), rgba(0,0,0,0.45)); }
-    .video .play {
-        position: absolute; inset: 0; margin: auto; width: 78px; height: 78px;
-        display: flex; align-items: center; justify-content: center;
-        background: rgba(255,255,255,0.92); border-radius: 999px; box-shadow: 0 10px 30px rgba(0,0,0,0.35);
-    }
-    .video .play::after { content: ""; border-left: 22px solid var(--orange); border-top: 13px solid transparent; border-bottom: 13px solid transparent; margin-left: 6px; }
-    .video .vlabel { position: absolute; left: 0; right: 0; bottom: 16px; text-align: center; color: #fff; font-weight: 700; font-size: 14px; text-shadow: 0 1px 6px rgba(0,0,0,0.6); }
+    .video video, .video img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 
     /* sections */
     section.block { padding: 56px 0; }
@@ -245,10 +237,8 @@
             </div>
 
             <div class="video">
-                <img src="img/hero.png" alt="Strava heatmap overlaid on Mapy.com" />
-                <div class="scrim"></div>
-                <div class="play" aria-hidden="true"></div>
-                <div class="vlabel">▶ 60-second demo — video coming soon</div>
+                <video src="img/hero-demo.mp4" poster="img/hero.png" autoplay muted loop playsinline
+                       aria-label="Strava heatmap overlaid on Mapy.com — live demo"></video>
             </div>
         </div>
     </section>
