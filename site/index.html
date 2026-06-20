@@ -108,6 +108,7 @@
         background: #0e0e12 center/cover no-repeat;
     }
     .video video, .video img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+    .video-cap { color: var(--muted); font-size: 14px; margin: 14px auto 0; }
 
     /* sections */
     section.block { padding: 56px 0; }
@@ -128,11 +129,6 @@
     .shots figure { margin: 0; }
     .shots img { width: 100%; border-radius: var(--radius); border: 1px solid var(--line); box-shadow: var(--shadow); display: block; }
     .shots figcaption { text-align: center; color: var(--muted); font-size: 13px; margin-top: 8px; }
-
-    /* single demo GIF in the extension section */
-    .demo-fig { margin: 6px auto 0; max-width: 860px; text-align: center; }
-    .demo-fig img { width: 100%; border-radius: var(--radius); border: 1px solid var(--line); box-shadow: var(--shadow); display: block; }
-    .demo-fig figcaption { color: var(--muted); font-size: 14px; margin-top: 14px; }
 
     /* Mapy vs Strava comparison */
     .cmp-list { display: flex; flex-direction: column; gap: 36px; margin-top: 10px; }
@@ -198,7 +194,6 @@
         <span class="brand"><svg width="28" height="28"><use href="#mark"/></svg><span><span class="heat">Heat</span><span class="mapy">mapy</span></span></span>
         <span class="spacer"></span>
         <a class="ghost hide-sm" href="#why">Why Mapy</a>
-        <a class="ghost hide-sm" href="#extension">Extension</a>
         <a class="ghost hide-sm" href="#compare">Mapy.com vs Strava</a>
         <a class="btn btn--chrome btn--sm" href="#get" data-cta="chrome">
             <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 1 8.66 5H12a5 5 0 0 0-4.33 2.5L4.2 4.8A10 10 0 0 1 12 2Zm9.5 6.5A10 10 0 0 1 12 22l4.33-7.5A5 5 0 0 0 12 7h9.5ZM2.5 6.6 6.83 14A5 5 0 0 0 12 17l-1.7 5A10 10 0 0 1 2.5 6.6ZM12 9a3 3 0 1 1 0 6 3 3 0 0 1 0-6Z"/></svg>
@@ -236,6 +231,7 @@
                 <video src="img/hero-demo.mp4" poster="img/hero.png" autoplay muted loop playsinline
                        aria-label="Strava heatmap overlaid on Mapy.com — live demo"></video>
             </div>
+            <p class="video-cap"><span class="hm">Global MTB heatmap</span> + your <span class="hmp">personal heatmap</span></p>
         </div>
     </section>
 
@@ -268,22 +264,6 @@
                     <p>Sticks to real routes, ⌘/Ctrl-click to drop points fast, and respects MTB vs road riding.</p>
                 </div>
             </div>
-        </div>
-    </section>
-
-    <!-- EXTENSION -->
-    <section class="block" id="extension">
-        <div class="wrap">
-            <div class="kicker">Extension</div>
-            <h2>Now with the best thing about <a class="strava-link" href="https://www.strava.com/maps/global-heatmap" target="_blank" rel="noopener">Strava</a>: everyone's <span class="hm">heatmaps</span></h2>
-            <p class="lead">Combine <a class="mapy-link" href="https://mapy.com" target="_blank" rel="noopener">Mapy.com</a>'s planning with <a class="strava-link" href="https://www.strava.com/maps/global-heatmap" target="_blank" rel="noopener">Strava</a>'s crowd data. Switch the
-                <span class="hm">global heatmap</span> between 🚴 Road / 🚵 MTB / 🏃 Running, then overlay your
-                <span class="hmp">personal heatmap</span> on top — and instantly see roads the locals know that you
-                haven't ridden yet.</p>
-            <figure class="demo-fig">
-                <img src="img/overlay-demo.gif" alt="Strava global MTB heatmap with your personal heatmap overlaid on Mapy.com" />
-                <figcaption><span class="hm">Global MTB heatmap</span> + your <span class="hmp">personal heatmap</span></figcaption>
-            </figure>
         </div>
     </section>
 
