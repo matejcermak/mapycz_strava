@@ -989,9 +989,6 @@
             return { ok: false, error: String(err && err.message ? err.message : err) };
         }
     }
-    function sportToRouteType(sport) {
-        return sport === "run" ? 2 : 1; // Strava: 1 = ride, 2 = run
-    }
     let sendBusy = false;
     async function sendRouteToStrava() {
         if (sendBusy) {
@@ -1012,10 +1009,10 @@
                 type: "uploadStravaRoute",
                 gpx: g.gpx,
                 name: "Mapy route " + new Date().toISOString().slice(0, 16).replace("T", " "),
-                routeType: sportToRouteType(globalSport),
+                sport: globalSport,
             });
             if (res && res.ok) {
-                toast("Sent to Strava ✓ — it'll sync to your connected Garmin/Wahoo on the next sync.");
+                toast("Sent to Strava ✓ (starred) — it'll sync to your connected Garmin/Wahoo on the next sync.");
             } else if (res && res.needLogin) {
                 toast("Log in to Strava (Subscriber) in this browser to send routes.");
             } else {
