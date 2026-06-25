@@ -659,9 +659,10 @@
             "</svg>" +
             "Heatmapy" +
             '<span class="msh-load" aria-hidden="true"><span class="msh-spin"></span><span class="msh-loadlabel">loading…</span></span>' +
-            '<button class="msh-master-btn" data-act="master" title="Toggle all heatmaps (A)" aria-label="Toggle all heatmaps">⏻</button>' +
+            '<button class="msh-master-btn" data-act="master" title="Toggle all heatmaps (A)" aria-label="Toggle all heatmaps"><kbd class="msh-key">A</kbd><span class="msh-power">⏻</span></button>' +
             "</div>",
             '<div class="msh-row msh-sport" role="group" aria-label="Sport">',
+            '<kbd class="msh-key">S</kbd>',
             SPORT_ORDER.map((s) =>
                 '<button class="msh-seg" data-sport="' + s + '">' + SPORT_LABEL[s] + "</button>"
             ).join(""),
@@ -669,11 +670,11 @@
             '<div class="msh-row msh-row--layers">',
             '  <span class="msh-layer">',
             '    <span class="msh-switch msh-switch--global" data-act="global" role="switch" tabindex="0"><span class="msh-knob"></span></span>',
-            '    <span class="msh-toggle-label msh-label--global">Global</span>',
+            '    <span class="msh-toggle-label msh-label--global"><kbd class="msh-key">D</kbd>Global</span>',
             "  </span>",
             '  <span class="msh-layer">',
             '    <span class="msh-switch msh-switch--personal" data-act="personal" role="switch" tabindex="0"><span class="msh-knob"></span></span>',
-            '    <span class="msh-toggle-label msh-label--personal">Personal</span>',
+            '    <span class="msh-toggle-label msh-label--personal"><kbd class="msh-key">F</kbd>Personal</span>',
             "  </span>",
             "</div>",
             '<div class="msh-row msh-op">',
@@ -725,11 +726,10 @@
             slider.value = String(opacity);
         }
         if (hint) {
-            const keys = '<span class="msh-keys">A all · S sport · D global · F personal</span>';
             const login = athleteId
                 ? ""
                 : '<a href="' + STRAVA_HEATMAP_URL + '" target="_blank" rel="noopener">Log in to Strava ↗</a> to enable personal · ';
-            hint.innerHTML = keys + login + ADD_POINT_HINT;
+            hint.innerHTML = login + ADD_POINT_HINT;
         }
     }
 

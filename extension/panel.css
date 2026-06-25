@@ -89,7 +89,16 @@
 }
 
 #msh-panel .msh-switch--on {
-    background: #34c759; /* green when on; grey (default) when off */
+    background: #4f7cff;
+}
+
+/* per-layer on-colors (match the map): global = orange, personal = blue */
+#msh-panel .msh-switch--global.msh-switch--on {
+    background: #fc5200;
+}
+
+#msh-panel .msh-switch--personal.msh-switch--on {
+    background: #1e90ff;
 }
 
 #msh-panel .msh-knob {
@@ -115,23 +124,43 @@
 /* master mute (⏻) in the title row */
 #msh-panel .msh-master-btn {
     margin-left: auto;
+    display: inline-flex;
+    align-items: center;
     cursor: pointer;
     border: 0;
     background: transparent;
-    color: #c8c8cf;
+    color: #34c759; /* green = heatmaps on */
     font-size: 15px;
     line-height: 1;
-    padding: 2px 5px;
+    padding: 2px 6px;
     border-radius: 6px;
 }
 
 #msh-panel .msh-master-btn:hover {
     background: rgba(255, 255, 255, 0.12);
-    color: #fff;
 }
 
 #msh-panel .msh-master-btn.msh-master--off {
-    color: #fc5200; /* lit orange when everything is muted */
+    color: #8a8a92; /* dim grey when everything is muted */
+}
+
+/* keycap-style shortcut hints (A / S / D / F) inline on each control */
+#msh-panel .msh-key {
+    display: inline-block;
+    min-width: 13px;
+    margin-right: 5px;
+    padding: 1px 4px;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    border-radius: 4px;
+    box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.18);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 14px;
+    text-align: center;
+    color: #fff;
+    background: rgba(255, 255, 255, 0.06);
+    vertical-align: middle;
 }
 
 /* sport segmented selector */
@@ -239,7 +268,7 @@
 
 #msh-panel .msh-slider {
     width: 110px;
-    accent-color: #fc5200;
+    accent-color: #a9a9b2; /* grayscale */
 }
 
 #msh-panel .msh-hint {
