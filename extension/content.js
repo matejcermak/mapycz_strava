@@ -685,8 +685,9 @@
             "</span>",
             '  <input class="msh-slider" type="range" min="0" max="100" step="10" aria-label="Heatmap opacity" />',
             "</div>",
-            '<div class="msh-row">',
-            '  <button class="msh-export" data-act="export">⬇ Export route (GPX)</button>',
+            '<div class="msh-row msh-actions">',
+            '  <button class="msh-send" data-act="send">Send route to Strava</button>',
+            '  <button class="msh-export" data-act="export" title="Download GPX">⬇</button>',
             "</div>",
             '<div class="msh-hint"></div>',
         ].join("");
@@ -696,6 +697,7 @@
         panelRoot.querySelector('[data-act="global"]').addEventListener("click", toggleGlobal);
         panelRoot.querySelector('[data-act="personal"]').addEventListener("click", togglePersonal);
         panelRoot.querySelector('[data-act="export"]').addEventListener("click", exportRoute);
+        panelRoot.querySelector('[data-act="send"]').addEventListener("click", sendRouteToStrava);
         panelRoot.querySelectorAll(".msh-seg").forEach((b) =>
             b.addEventListener("click", () => setSport(b.getAttribute("data-sport")))
         );
@@ -928,6 +930,99 @@
             }
         } finally {
             window.setTimeout(() => { exportBusy = false; }, 800);
+        }
+    }
+
+    // ---- Send route to Strava ------------------------------------------------
+    // The MAIN-world hook (mapy-hook.js) posts the planner's GPX export URL here.
+    let mapyExportUrlWaiter = null;
+    window.addEventListener("message", (e) => {
+        if (e.source !== window || !e.data || e.data.source !== "msh-mapy-export") {
+            return;
+        }
+        const url = String(e.data.url || "");
+        if (url && mapyExportUrlWaiter) {
+            mapyExportUrlWaiter(url);
+            mapyExportUrlWaiter = null;
+        }
+    });
+    function awaitMapyExportUrl(timeoutMs) {
+        return new Promise((resolve) => {
+            let done = false;
+            mapyExportUrlWaiter = (u) => { if (!done) { done = true; resolve(u); } };
+            window.setTimeout(() => {
+                if (!done) { done = true; mapyExportUrlWaiter = null; resolve(""); }
+            }, timeoutMs || 5000);
+        });
+    }
+    // Drive Mapy's export so it fetches the GPX URL (captured by the hook), then
+    // fetch that URL ourselves (same-origin, with cookies) to get the GPX text.
+    async function getMapyGpxText() {
+        if (!clickMapyExportButton()) {
+            return { ok: false, error: "no-route" };
+        }
+        const dialog = await waitForElement("button.mymaps-dialog__saveBtn, span.mymaps-dialog__saveBtnText", 1500);
+        if (!dialog) {
+            return { ok: false, error: "no-dialog" };
+        }
+        const urlPromise = awaitMapyExportUrl(5000);
+        await new Promise((r) => window.setTimeout(r, 150));
+        clickMapyExportDialogSave();
+        const url = await urlPromise;
+        if (!url) {
+            return { ok: false, error: "no-url" };
+        }
+        try {
+            const resp = await fetch(url, { credentials: "include" });
+            if (!resp.ok) {
+                return { ok: false, error: "fetch-" + resp.status };
+            }
+            const gpx = await resp.text();
+            if (!gpx || gpx.indexOf("<gpx") === -1) {
+                return { ok: false, error: "bad-gpx" };
+            }
+            return { ok: true, gpx };
+        } catch (err) {
+            return { ok: false, error: String(err && err.message ? err.message : err) };
+        }
+    }
+    function sportToRouteType(sport) {
+        return sport === "run" ? 2 : 1; // Strava: 1 = ride, 2 = run
+    }
+    let sendBusy = false;
+    async function sendRouteToStrava() {
+        if (sendBusy) {
+            return;
+        }
+        sendBusy = true;
+        const btn = panelRoot && panelRoot.querySelector('[data-act="send"]');
+        const restore = btn ? btn.textContent : "";
+        if (btn) { btn.textContent = "Sending…"; btn.disabled = true; }
+        try {
+            toast("Preparing route from Mapy…");
+            const g = await getMapyGpxText();
+            if (!g.ok) {
+                toast("Couldn't get the route — plan one on Mapy first (⌘/Ctrl-click to add points), then try again.");
+                return;
+            }
+            const res = await chrome.runtime.sendMessage({
+                type: "uploadStravaRoute",
+                gpx: g.gpx,
+                name: "Mapy route " + new Date().toISOString().slice(0, 16).replace("T", " "),
+                routeType: sportToRouteType(globalSport),
+            });
+            if (res && res.ok) {
+                toast("Sent to Strava ✓ — it'll sync to your connected Garmin/Wahoo on the next sync.");
+            } else if (res && res.needLogin) {
+                toast("Log in to Strava (Subscriber) in this browser to send routes.");
+            } else {
+                toast("Strava upload failed" + (res && res.error ? " (" + res.error + ")" : "") + ". The ⬇ GPX download still works.");
+            }
+        } catch (err) {
+            toast("Send failed: " + String(err && err.message ? err.message : err));
+        } finally {
+            if (btn) { btn.textContent = restore; btn.disabled = false; }
+            window.setTimeout(() => { sendBusy = false; }, 800);
         }
     }
 

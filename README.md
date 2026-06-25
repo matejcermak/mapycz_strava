@@ -56,8 +56,10 @@ On-map panel (bottom-left):
 - **⏻** — master mute: hides everything at once (your per-layer choices are
   remembered) and brings it all back.
 - **Opacity** slider — one control for both layers.
-- **Export route (GPX)** — drives Mapy's own planner export so you get a GPX of
-  your planned route (import into Garmin Connect or the Wahoo app).
+- **Send route to Strava** — uploads your planned Mapy route to your Strava
+  account as a Route (requires a Strava subscription). From there it syncs to your
+  bike computer — see below.
+- **⬇** — plain GPX download (no account needed), to import manually.
 
 The global and personal layers toggle **independently**, so you can show your
 personal heat on its own, the global heat on its own, both, or neither.
@@ -65,6 +67,19 @@ personal heat on its own, the global heat on its own, both, or neither.
 Keyboard: `A` all on/off · `S` cycle sport · `D` global · `F` personal ·
 `[` / `]` opacity. When planning a route, **⌘-click (Mac) / Ctrl-click (PC)** the
 map to add a point.
+
+## Getting a planned route onto your Garmin / Wahoo
+
+The fast path is **Send route to Strava** (one click), then let your device pull
+it from Strava — both brands do this once you've linked them **one time**:
+
+- **Garmin:** connect Strava in Garmin Connect (Strava route sync). New Strava
+  routes then auto-appear in **Courses** on your Edge/watch on the next sync.
+- **Wahoo:** in the Wahoo app, link your Strava account under route providers.
+  Your Strava routes show up in the app and sync to the ELEMNT over Wi-Fi.
+
+(Uploading a GPX as a Strava *route* is a Strava subscriber feature; free accounts
+can use the **⬇ GPX download** and import manually instead.)
 
 ## How it works
 

@@ -114,6 +114,68 @@ async function detectAthlete() {
     return { ok: false };
 }
 
+// ---- Send a planned route to Strava (the user's own session) -------------
+// Strava's web app uploads a GPX-as-route to this internal endpoint. There's no
+// public API for it, so we replicate the same request with the user's cookies
+// (which the worker already has). Requires a Strava subscription.
+async function getStravaCsrfToken() {
+    const resp = await fetch("https://www.strava.com/", { credentials: "include" });
+    if (!resp.ok) {
+        return null;
+    }
+    const html = await resp.text();
+    const m =
+        html.match(/<meta[^>]+name=["']csrf-token["'][^>]+content=["']([^"']+)["']/i) ||
+        html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']csrf-token["']/i);
+    return m ? m[1] : null;
+}
+
+async function uploadStravaRoute(gpxText, name, routeType) {
+    if (!gpxText || gpxText.indexOf("<gpx") === -1) {
+        return { ok: false, error: "no-gpx" };
+    }
+    const token = await getStravaCsrfToken();
+    if (!token) {
+        // No token usually means not logged in to Strava in this browser.
+        return { ok: false, error: "no-csrf", needLogin: true };
+    }
+    const fname = String(name || "mapy-route").replace(/[^\w.-]+/g, "-").slice(0, 60) + ".gpx";
+    const fd = new FormData();
+    fd.append("file", new Blob([gpxText], { type: "application/octet-stream" }), fname);
+    fd.append("data_type", "gpx");
+    fd.append("route_type", String(routeType || 1)); // 1 = ride
+    try {
+        const resp = await fetch("https://www.strava.com/frontend/routes/file", {
+            method: "POST",
+            credentials: "include",
+            headers: {
+                "x-csrf-token": token,
+                "x-requested-with": "XMLHttpRequest",
+                accept: "application/json, text/plain, */*",
+            },
+            body: fd,
+        });
+        const text = await resp.text();
+        if (!resp.ok) {
+            return { ok: false, status: resp.status, error: text.slice(0, 200) };
+        }
+        let data = null;
+        try {
+            data = JSON.parse(text);
+        } catch (_) {
+            // non-JSON success is still success
+        }
+        const id = data && (data.id || data.route_id || (data.route && data.route.id));
+        return {
+            ok: true,
+            id: id || null,
+            url: id ? "https://www.strava.com/routes/" + id : null,
+        };
+    } catch (e) {
+        return { ok: false, error: String(e && e.message ? e.message : e) };
+    }
+}
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (!msg || typeof msg !== "object") {
         return false;
@@ -124,6 +186,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     }
     if (msg.type === "detectAthlete") {
         detectAthlete().then(sendResponse);
+        return true; // async
+    }
+    if (msg.type === "uploadStravaRoute" && typeof msg.gpx === "string") {
+        uploadStravaRoute(msg.gpx, msg.name, msg.routeType).then(sendResponse);
         return true; // async
     }
     return false;

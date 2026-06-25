@@ -221,14 +221,42 @@
     color: #1e90ff;
 }
 
-/* export route (GPX) button — full width, same height as the sport buttons */
-#msh-panel .msh-export {
-    width: 100%;
+/* actions row: Send to Strava (primary) + GPX download (icon) */
+#msh-panel .msh-actions {
+    gap: 6px;
+}
+
+#msh-panel .msh-send {
+    flex: 1;
     height: 28px;
     cursor: pointer;
     border: 0;
     border-radius: 8px;
-    padding: 0 9px;
+    font: inherit;
+    font-weight: 700;
+    font-size: 13px;
+    color: #fff;
+    background: #fc5200; /* Strava orange */
+    transition: background 0.15s;
+}
+
+#msh-panel .msh-send:hover {
+    background: #e04800;
+}
+
+#msh-panel .msh-send:disabled {
+    opacity: 0.7;
+    cursor: default;
+}
+
+#msh-panel .msh-export {
+    flex: 0 0 auto;
+    width: 36px;
+    height: 28px;
+    cursor: pointer;
+    border: 0;
+    border-radius: 8px;
+    padding: 0;
     font: inherit;
     font-weight: 700;
     font-size: 13px;
