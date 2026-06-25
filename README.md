@@ -5,6 +5,10 @@ heatmap split by sport** (MTB / Gravel / Road / Run, in *hot*) plus your own **p
 heatmap** (in blue), shown together over the real map. Find the roads and trails
 you've never ridden or run yet — on the map with the best route planning around.
 
+**New — Sync to Strava:** plan a route on Mapy.com and push it to your Strava
+account in one click (always private and starred). From there it flows to your
+**Garmin / Wahoo** on the next device sync. *(Strava subscription required.)*
+
 **[🌐 heatmapy.com](https://heatmapy.com)** &nbsp;·&nbsp;
 **[🧩 Get it on the Chrome Web Store](https://chromewebstore.google.com/detail/pkifpafiblikmgkcpkbdjmoapjnladok)** &nbsp;·&nbsp;
 **[☕ Buy me a coffee](https://donate.stripe.com/5kQ5kD6bo4oV83UcCd5J600)**
@@ -13,10 +17,9 @@ you've never ridden or run yet — on the map with the best route planning aroun
 
 ## Screenshots
 
-| | |
-| --- | --- |
-| ![Global heatmap on Mapy.com](extension/store-assets/screenshot-1-global-heatmap.png) | ![Global heatmap by sport](extension/store-assets/screenshot-2-sport-switch.png) |
-| ![Plan routes on top of the heatmap](extension/store-assets/screenshot-3-route-planning.png) | ![On-map controls](extension/store-assets/screenshot-4-controls.png) |
+| | | |
+| --- | --- | --- |
+| ![Strava global + personal heatmaps on Mapy.com](extension/store-assets/screenshot-1-heatmap.png) | ![Plan routes on the heatmap](extension/store-assets/screenshot-2-route-planning.png) | ![Sync to Strava — then to your Garmin/Wahoo](extension/store-assets/screenshot-3-sync-strava.png) |
 
 The **global** heat shows where everyone goes; your **personal** heat (blue) shows
 where *you've* already been. Together they make the good lines obvious — and the
@@ -24,8 +27,10 @@ ones you still haven't explored. That's the whole point of planning. Per-sport
 **MTB / Gravel / Road / Run** layers mean it's not just for cyclists. And Mapy.com's
 outdoor + aerial maps and route planner beat the usual map apps for this.
 
-You need to be **logged in to Strava** in the same browser. The global heatmap
-above zoom 11 and the personal heatmap require a **Strava Subscription**.
+You need to be **logged in to Strava** in the same browser. A **Strava Subscription**
+is required for the global heatmap above zoom 11, your **personal heatmap**, and
+**Sync to Strava** (saving a planned route to your account). The low-zoom global
+heatmap, route planning, and the plain GPX download work on a free account.
 
 ---
 
@@ -56,9 +61,9 @@ On-map panel (bottom-left):
 - **⏻** — master mute: hides everything at once (your per-layer choices are
   remembered) and brings it all back.
 - **Opacity** slider — one control for both layers.
-- **Send route to Strava** — uploads your planned Mapy route to your Strava
-  account as a Route (requires a Strava subscription). From there it syncs to your
-  bike computer — see below.
+- **Sync to Strava** — saves your planned Mapy route to your Strava account as a
+  Route (**requires a Strava subscription**), always private and starred. From there
+  it syncs to your watch / bike computer — see below.
 - **⬇** — plain GPX download (no account needed), to import manually.
 
 The global and personal layers toggle **independently**, so you can show your
@@ -70,7 +75,7 @@ map to add a point.
 
 ## Getting a planned route onto your Garmin / Wahoo
 
-The fast path is **Send route to Strava** (one click), then let your device pull
+The fast path is **Sync to Strava** (one click), then let your device pull
 it from Strava — both brands do this once you've linked them **one time**:
 
 - **Garmin:** connect Strava in Garmin Connect (Strava route sync). New Strava

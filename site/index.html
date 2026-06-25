@@ -175,9 +175,24 @@
     footer a:hover { color: var(--ink); }
     .disclaim { margin-top: 12px; font-size: 12px; opacity: 0.85; }
 
+    .sub-note { max-width: 660px; margin: 12px auto 0; text-align: center; font-size: 13px; line-height: 1.5; color: var(--muted); }
+    .sub-note a { color: inherit; text-decoration: underline; }
     @media (max-width: 720px) {
         .grid, .shots { grid-template-columns: 1fr; }
         .nav a.ghost.hide-sm { display: none; }
+    }
+    /* keep the header on one line on narrow phones */
+    @media (max-width: 480px) {
+        .wrap { padding: 0 14px; }
+        .nav { gap: 9px; }
+        .nav .btn--chrome.btn--sm svg { display: none; }
+        .btn--sm { padding: 8px 11px; }
+    }
+    @media (max-width: 360px) {
+        .wrap { padding: 0 12px; }
+        .nav { gap: 7px; }
+        .brand { font-size: 17px; gap: 7px; }
+        .brand > svg { width: 24px; height: 24px; }
     }
 </style>
 </head>
@@ -200,7 +215,7 @@
         <a class="ghost hide-sm" href="#compare">Mapy.com vs Strava</a>
         <a class="btn btn--chrome btn--sm" href="#get" data-cta="chrome">
             <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 1 8.66 5H12a5 5 0 0 0-4.33 2.5L4.2 4.8A10 10 0 0 1 12 2Zm9.5 6.5A10 10 0 0 1 12 22l4.33-7.5A5 5 0 0 0 12 7h9.5ZM2.5 6.6 6.83 14A5 5 0 0 0 12 17l-1.7 5A10 10 0 0 1 2.5 6.6ZM12 9a3 3 0 1 1 0 6 3 3 0 0 1 0-6Z"/></svg>
-            <span data-i18n="cta.chrome">Chrome Extension (Free)</span>
+            <span data-i18n="cta.chromeShort">Extension (Free)</span>
         </a>
         <a href="#" class="lang-switch" data-lang-toggle aria-label="Switch language">EN</a>
     </div>
@@ -213,7 +228,7 @@
             <h1 data-i18n="hero.h1">Strava heatmaps, on the map that's <span class="g">actually good at planning</span>.</h1>
             <p class="sub" data-i18n="hero.sub">Overlay <a class="strava-link" href="https://www.strava.com/maps/global-heatmap" target="_blank" rel="noopener">Strava</a>'s <span class="hm">global heatmap</span> and your
                 <span class="hmp">personal heatmap</span> on <a class="mapy-link" href="https://mapy.com" target="_blank" rel="noopener">Mapy.com</a> —
-                switch 🚴 Road / 🚵 MTB / 🏃 Running maps, and spot the roads and trails you've never explored yet.</p>
+                switch 🚴 Road / 🚵 MTB / 🌄 Gravel / 🏃 Running maps, plan your route, and <b>sync it straight to Strava</b> → your Garmin or Wahoo.</p>
             <div class="cta-row">
                 <a class="btn btn--chrome" href="#" data-cta="chrome">
                     <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 1 8.66 5H12a5 5 0 0 0-4.33 2.5L4.2 4.8A10 10 0 0 1 12 2Zm9.5 6.5A10 10 0 0 1 12 22l4.33-7.5A5 5 0 0 0 12 7h9.5ZM2.5 6.6 6.83 14A5 5 0 0 0 12 17l-1.7 5A10 10 0 0 1 2.5 6.6ZM12 9a3 3 0 1 1 0 6 3 3 0 0 1 0-6Z"/></svg>
@@ -236,6 +251,7 @@
                        aria-label="Strava heatmap overlaid on Mapy.com — live demo"></video>
             </div>
             <p class="video-cap" data-i18n="hero.videocap"><span class="hm">Global MTB heatmap</span> + your <span class="hmp">personal heatmap</span></p>
+            <p class="sub-note" data-i18n="hero.subnote">Free to use. The global heatmap above zoom 11, your <span class="hmp">personal heatmap</span>, and <b>Sync to Strava</b> need a <a class="strava-link" href="https://www.strava.com/maps/global-heatmap" target="_blank" rel="noopener">Strava</a> subscription.</p>
         </div>
     </section>
 
@@ -366,12 +382,14 @@
         'meta.title': `Heatmapy — Strava heatmapy na Mapy.com`,
         'nav.why': `Proč Mapy`,
         'cta.chrome': `Rozšíření do Chromu (zdarma)`,
+        'cta.chromeShort': `Rozšíření (zdarma)`,
         'cta.coffee': `☕ Kup mi kafe`,
         'cta.github': `Zobrazit na GitHubu`,
         'hero.h1': `Strava heatmapy na mapě, která <span class="g">se fakt hodí na plánování</span>.`,
-        'hero.sub': `Promítni <span class="hm">globální heatmapu</span> ze <a class="strava-link" href="https://www.strava.com/maps/global-heatmap" target="_blank" rel="noopener">Stravy</a> i svoji <span class="hmp">osobní heatmapu</span> na <a class="mapy-link" href="https://mapy.com" target="_blank" rel="noopener">Mapy.com</a> — přepínej mapy pro 🚴 silnici / 🚵 MTB / 🏃 běh a objev cesty a stezky, které jsi ještě neprojel.`,
+        'hero.sub': `Promítni <span class="hm">globální heatmapu</span> ze <a class="strava-link" href="https://www.strava.com/maps/global-heatmap" target="_blank" rel="noopener">Stravy</a> i svoji <span class="hmp">osobní heatmapu</span> na <a class="mapy-link" href="https://mapy.com" target="_blank" rel="noopener">Mapy.com</a> — přepínej mapy pro 🚴 silnici / 🚵 MTB / 🌄 gravel / 🏃 běh, naplánuj trasu a <b>pošli ji rovnou do Stravy</b> → do Garminu nebo Wahoo.`,
         'hero.maintain': `<b>Aktivně vyvíjeno.</b> Pravidelně opravuji chyby a přidávám vylepšení — narazil jsi na chybu, nebo máš nápad? <a href="https://github.com/matejcermak/heatmapy/issues" target="_blank" rel="noopener">Založ issue na GitHubu →</a>`,
         'hero.videocap': `<span class="hm">Globální MTB heatmapa</span> + tvoje <span class="hmp">osobní heatmapa</span>`,
+        'hero.subnote': `Zdarma. Globální heatmapa nad úrovní přiblížení 11, <span class="hmp">osobní heatmapa</span> a <b>synchronizace do Stravy</b> vyžadují předplatné <a class="strava-link" href="https://www.strava.com/maps/global-heatmap" target="_blank" rel="noopener">Stravy</a>.`,
         'why.kicker': `Proč Mapy.com`,
         'why.h2': `Mapa stvořená pro outdoor — a pro plánování`,
         'why.lead': `Podkladová mapa <a class="strava-link" href="https://www.strava.com/maps/global-heatmap" target="_blank" rel="noopener">Stravy</a> je chudá. Outdoorová mapa <a class="mapy-link" href="https://mapy.com" target="_blank" rel="noopener">Mapy.com</a> ukáže to, na čem při výběru trasy opravdu záleží.`,
