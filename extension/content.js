@@ -23,10 +23,12 @@
     const PERSONAL_ALPHA_THRESHOLD = 8;
     const SPORT_TOKEN = {
         mtb: "sport_MountainBikeRide",
+        gravel: "sport_GravelRide",
         ride: "sport_Ride",
         run: "sport_Run",
     };
-    const SPORT_LABEL = { mtb: "MTB", ride: "Ride", run: "Run" };
+    const SPORT_LABEL = { mtb: "MTB", gravel: "Gravel", ride: "Road", run: "Run" };
+    const SPORT_ORDER = ["mtb", "gravel", "ride", "run"];
     const MIN_ZOOM = 0;
     const MAX_ZOOM = 22;
     const GLOBAL_TILE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -35,9 +37,10 @@
     const ADD_POINT_HINT = (IS_MAC ? "⌘-click" : "Ctrl-click") + " the map to add a route point";
 
     // ---- State ---------------------------------------------------------------
-    let masterOff = false; // A: hide both layers (the chosen sport is kept)
-    let globalSport = "mtb"; // "mtb" | "ride" | "run" (S cycles, never "off")
-    let personalOn = false;
+    let masterOff = false; // A: mute everything (the per-layer states are remembered)
+    let globalSport = "mtb"; // shared discipline: "mtb" | "gravel" | "ride" | "run" (S cycles)
+    let globalOn = true; // G: global heatmap layer on/off (independent)
+    let personalOn = false; // F: personal heatmap layer on/off (independent)
     let opacity = 100;
     let athleteId = "";
 
@@ -105,10 +108,11 @@
         legacyMode = "ride"; // migrate the old name
     }
     const storedSport = lsGet("globalSport", "");
-    globalSport = ["mtb", "ride", "run"].includes(storedSport)
+    globalSport = SPORT_ORDER.includes(storedSport)
         ? storedSport
-        : (["mtb", "ride", "run"].includes(legacyMode) ? legacyMode : "mtb");
+        : (SPORT_ORDER.includes(legacyMode) ? legacyMode : "mtb");
     masterOff = lsGet("masterOff", "") === "1" || legacyMode === "off";
+    globalOn = lsGet("globalOn", "1") !== "0"; // default on (matches old always-on behavior)
     personalOn = lsGet("personalOn", "") === "1";
     opacity = clamp(parseInt(lsGet("opacity", "100"), 10) || 100, 0, 100);
 
@@ -530,7 +534,10 @@
         if (masterOff) {
             return [];
         }
-        const layers = [{ kind: "global", sport: globalSport }];
+        const layers = [];
+        if (globalOn) {
+            layers.push({ kind: "global", sport: globalSport });
+        }
         if (personalOn && athleteId) {
             layers.push({ kind: "personal", sport: globalSport });
         }
@@ -596,6 +603,7 @@
             Math.round(rect.top),
             masterOff ? "1" : "0",
             globalSport,
+            globalOn ? "1" : "0",
             personalOn ? "1" : "0",
             opacity,
             athleteId,
@@ -651,29 +659,31 @@
             "</svg>" +
             "Heatmapy" +
             '<span class="msh-load" aria-hidden="true"><span class="msh-spin"></span><span class="msh-loadlabel">loading…</span></span>' +
+            '<button class="msh-master-btn" data-act="master" title="Toggle all heatmaps (A)" aria-label="Toggle all heatmaps">⏻</button>' +
             "</div>",
-            '<div class="msh-row msh-row--master">',
-            '  <span class="msh-switch" data-act="master" role="switch" tabindex="0"><span class="msh-knob"></span></span>',
-            '  <span class="msh-master-label">(A) Heatmaps</span>',
+            '<div class="msh-row msh-sport" role="group" aria-label="Sport">',
+            SPORT_ORDER.map((s) =>
+                '<button class="msh-seg" data-sport="' + s + '">' + SPORT_LABEL[s] + "</button>"
+            ).join(""),
             "</div>",
-            '<div class="msh-row">',
-            '  <button class="msh-btn" data-act="global">(S) Global: MTB</button>',
-            '  <button class="msh-btn" data-act="personal">(D) Personal: off</button>',
+            '<div class="msh-row msh-row--layer">',
+            '  <span class="msh-switch msh-switch--global" data-act="global" role="switch" tabindex="0"><span class="msh-knob"></span></span>',
+            '  <span class="msh-toggle-label msh-label--global">Global</span>',
             "</div>",
-            '<div class="msh-row msh-op">',
-            '  <span>Opacity</span>',
-            '  <input class="msh-slider" type="range" min="0" max="100" step="10" />',
+            '<div class="msh-row msh-row--layer">',
+            '  <span class="msh-switch msh-switch--personal" data-act="personal" role="switch" tabindex="0"><span class="msh-knob"></span></span>',
+            '  <span class="msh-toggle-label msh-label--personal">Personal</span>',
             "</div>",
             '<div class="msh-hint"></div>',
         ].join("");
         document.body.appendChild(panelRoot);
 
         panelRoot.querySelector('[data-act="master"]').addEventListener("click", masterToggle);
-        panelRoot.querySelector('[data-act="global"]').addEventListener("click", cycleGlobal);
+        panelRoot.querySelector('[data-act="global"]').addEventListener("click", toggleGlobal);
         panelRoot.querySelector('[data-act="personal"]').addEventListener("click", togglePersonal);
-        const slider = panelRoot.querySelector(".msh-slider");
-        slider.value = String(opacity);
-        slider.addEventListener("input", (e) => setOpacity(parseInt(e.target.value, 10)));
+        panelRoot.querySelectorAll(".msh-seg").forEach((b) =>
+            b.addEventListener("click", () => setSport(b.getAttribute("data-sport")))
+        );
         renderPanel();
     }
 
@@ -681,50 +691,62 @@
         if (!panelRoot) {
             return;
         }
-        const sw = panelRoot.querySelector('[data-act="master"]');
+        const master = panelRoot.querySelector('[data-act="master"]');
         const g = panelRoot.querySelector('[data-act="global"]');
         const p = panelRoot.querySelector('[data-act="personal"]');
         const hint = panelRoot.querySelector(".msh-hint");
-        const slider = panelRoot.querySelector(".msh-slider");
-        if (sw) {
-            sw.classList.toggle("msh-switch--on", !masterOff);
+        if (master) {
+            master.classList.toggle("msh-master--off", masterOff);
         }
+        panelRoot.querySelectorAll(".msh-seg").forEach((b) => {
+            b.classList.toggle("msh-seg--active", b.getAttribute("data-sport") === globalSport);
+        });
         if (g) {
-            g.textContent = "(S) Global: " + SPORT_LABEL[globalSport];
-            g.classList.toggle("msh-btn--global", !masterOff);
-            g.classList.toggle("msh-btn--off", masterOff);
+            g.classList.toggle("msh-switch--on", globalOn && !masterOff);
         }
         if (p) {
-            const personalActive = !masterOff && personalOn;
-            p.textContent = "(D) Personal: " + (personalOn ? "on" : "off");
-            p.classList.toggle("msh-btn--personal", personalActive);
-            p.classList.toggle("msh-btn--off", !personalActive);
-        }
-        if (slider) {
-            slider.value = String(opacity);
+            p.classList.toggle("msh-switch--on", personalOn && !masterOff);
         }
         if (hint) {
+            const keys = '<span class="msh-keys">A all · S sport · G global · F personal</span>';
             const login = athleteId
                 ? ""
                 : '<a href="' + STRAVA_HEATMAP_URL + '" target="_blank" rel="noopener">Log in to Strava ↗</a> to enable personal · ';
-            hint.innerHTML = login + ADD_POINT_HINT;
+            hint.innerHTML = keys + login + ADD_POINT_HINT;
         }
     }
 
     // ---- Actions -------------------------------------------------------------
-    function cycleGlobal() {
-        if (masterOff) {
-            masterOff = false; // un-hide, showing the remembered sport
-        } else {
-            const order = ["mtb", "ride", "run"];
-            globalSport = order[(order.indexOf(globalSport) + 1) % order.length];
+    // "S" — cycle the shared discipline (both layers follow it). Never turns layers off.
+    function cycleSport() {
+        const i = SPORT_ORDER.indexOf(globalSport);
+        setSport(SPORT_ORDER[(i + 1) % SPORT_ORDER.length]);
+    }
+    function setSport(sport) {
+        if (!SPORT_ORDER.includes(sport)) {
+            return;
         }
+        globalSport = sport;
         lsSet("globalSport", globalSport);
+        lastStateKey = "";
+        renderPanel();
+        requestRender();
+    }
+    // "G" — global heatmap on/off (independent). Toggling while muted un-mutes onto it.
+    function toggleGlobal() {
+        if (masterOff) {
+            masterOff = false;
+            globalOn = true;
+        } else {
+            globalOn = !globalOn;
+        }
+        lsSet("globalOn", globalOn ? "1" : "0");
         lsSet("masterOff", masterOff ? "1" : "0");
         lastStateKey = "";
         renderPanel();
         requestRender();
     }
+    // "F" — personal heatmap on/off (independent).
     function togglePersonal() {
         if (masterOff) {
             masterOff = false;
@@ -741,7 +763,7 @@
         renderPanel();
         requestRender();
     }
-    // "A" = master on/off: hide both layers (the sport choice is kept) or show them.
+    // "A" = master mute: hide every layer (per-layer choices remembered) or restore them.
     function masterToggle() {
         masterOff = !masterOff;
         lsSet("masterOff", masterOff ? "1" : "0");
@@ -809,8 +831,11 @@
                     masterToggle();
                 } else if (key === "s") {
                     event.preventDefault();
-                    cycleGlobal();
-                } else if (key === "d") {
+                    cycleSport();
+                } else if (key === "g") {
+                    event.preventDefault();
+                    toggleGlobal();
+                } else if (key === "f") {
                     event.preventDefault();
                     togglePersonal();
                 } else if (event.key === "[") {

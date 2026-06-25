@@ -29,16 +29,16 @@
 **Name**: Strava Heatmap for Mapy.com
 
 **Short description** (≤132 chars):
-> See your Strava heatmaps on Mapy.com — global MTB / Ride / Run popularity plus
-> your own personal heatmap, for better route planning.
+> See your Strava heatmaps on Mapy.com — global MTB / Gravel / Road / Run popularity
+> plus your own personal heatmap, for better route planning.
 
 **Detailed description**:
 > Plan routes on Mapy.com with Strava's heat on top of the map.
 >
-> • Global heatmap, split by sport — switch between MTB, Ride, and Run.
-> • Your personal heatmap in blue, overlaid on the global heat, following the same
->   sport — so you can spot the roads and trails you haven't done yet.
-> • On-map controls plus keyboard shortcuts (A master / S global / D personal),
+> • Global heatmap, split by sport — switch between MTB, Gravel, Road, and Run.
+> • Your personal heatmap in blue, on top of the global heat — toggle each layer
+>   independently, so you can spot the roads and trails you haven't done yet.
+> • On-map controls plus keyboard shortcuts (A all / S sport / G global / F personal),
 >   opacity, fast tile caching.
 >
 > Requires being logged in to Strava in the same browser. The global heatmap above

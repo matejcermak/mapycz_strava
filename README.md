@@ -1,7 +1,7 @@
 # Heatmapy — Strava Heatmap for Mapy.com
 
 Overlay your **Strava heatmaps** on [Mapy.com](https://mapy.com) — the **global
-heatmap split by sport** (MTB / Ride / Run, in *hot*) plus your own **personal
+heatmap split by sport** (MTB / Gravel / Road / Run, in *hot*) plus your own **personal
 heatmap** (in blue), shown together over the real map. Find the roads and trails
 you've never ridden or run yet — on the map with the best route planning around.
 
@@ -21,7 +21,7 @@ you've never ridden or run yet — on the map with the best route planning aroun
 The **global** heat shows where everyone goes; your **personal** heat (blue) shows
 where *you've* already been. Together they make the good lines obvious — and the
 ones you still haven't explored. That's the whole point of planning. Per-sport
-**MTB / Ride / Run** layers mean it's not just for cyclists. And Mapy.com's
+**MTB / Gravel / Road / Run** layers mean it's not just for cyclists. And Mapy.com's
 outdoor + aerial maps and route planner beat the usual map apps for this.
 
 You need to be **logged in to Strava** in the same browser. The global heatmap
@@ -50,14 +50,16 @@ profile URL).
 
 On-map panel (bottom-left):
 
-- **(A) Heatmaps** — master on/off switch; hides both layers (greying them) and
-  brings them back, keeping your sport choice.
-- **(S) Global** — cycles **MTB → Ride → Run** (in *hot*); hide it with **(A)**.
-- **(D) Personal** — toggles your heatmap (in *blue*); it follows the sport
-  selected in Global.
-- Opacity slider.
+- **Sport** — pick the discipline: **MTB / Gravel / Road / Run**. Both layers follow it.
+- **Global** (orange) — independent on/off for the crowd heatmap.
+- **Personal** (blue) — independent on/off for *your* heatmap.
+- **⏻** — master mute: hides everything at once (your per-layer choices are
+  remembered) and brings it all back.
 
-The keys mirror the buttons: `A` master · `S` global sport · `D` personal ·
+The global and personal layers toggle **independently**, so you can show your
+personal heat on its own, the global heat on its own, both, or neither.
+
+Keyboard: `A` all on/off · `S` cycle sport · `G` global · `F` personal ·
 `[` / `]` opacity. When planning a route, **⌘-click (Mac) / Ctrl-click (PC)** the
 map to add a point.
 

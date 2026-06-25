@@ -91,6 +91,15 @@
     background: #4f7cff;
 }
 
+/* per-layer on-colors (match the map): global = orange, personal = blue */
+#msh-panel .msh-switch--global.msh-switch--on {
+    background: #fc5200;
+}
+
+#msh-panel .msh-switch--personal.msh-switch--on {
+    background: #1e90ff;
+}
+
 #msh-panel .msh-knob {
     position: absolute;
     top: 2px;
@@ -109,6 +118,78 @@
 #msh-panel .msh-master-label {
     font-weight: 600;
     opacity: 0.92;
+}
+
+/* master mute (⏻) in the title row */
+#msh-panel .msh-master-btn {
+    margin-left: auto;
+    cursor: pointer;
+    border: 0;
+    background: transparent;
+    color: #c8c8cf;
+    font-size: 15px;
+    line-height: 1;
+    padding: 2px 5px;
+    border-radius: 6px;
+}
+
+#msh-panel .msh-master-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+}
+
+#msh-panel .msh-master-btn.msh-master--off {
+    color: #fc5200; /* lit orange when everything is muted */
+}
+
+/* sport segmented selector */
+#msh-panel .msh-sport {
+    gap: 4px;
+}
+
+#msh-panel .msh-seg {
+    cursor: pointer;
+    border: 0;
+    border-radius: 6px;
+    padding: 4px 9px;
+    font: inherit;
+    font-weight: 600;
+    font-size: 11px;
+    background: #3a3a40;
+    color: #c8c8cf;
+}
+
+#msh-panel .msh-seg:hover {
+    background: #45454c;
+    color: #fff;
+}
+
+#msh-panel .msh-seg--active {
+    background: #fff;
+    color: #15151a;
+}
+
+/* layer toggle rows */
+#msh-panel .msh-row--layer {
+    gap: 8px;
+}
+
+#msh-panel .msh-toggle-label {
+    font-weight: 700;
+}
+
+#msh-panel .msh-label--global {
+    color: #fc5200;
+}
+
+#msh-panel .msh-label--personal {
+    color: #1e90ff;
+}
+
+#msh-panel .msh-keys {
+    display: block;
+    margin-bottom: 3px;
+    opacity: 0.7;
 }
 
 #msh-panel .msh-btn {
