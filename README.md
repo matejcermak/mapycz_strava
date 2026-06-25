@@ -50,16 +50,19 @@ profile URL).
 
 On-map panel (bottom-left):
 
-- **Sport** — pick the discipline: **MTB / Gravel / Road / Run**. Both layers follow it.
-- **Global** (orange) — independent on/off for the crowd heatmap.
-- **Personal** (blue) — independent on/off for *your* heatmap.
+- **Sport** — pick the discipline: **Road / MTB / Gravel / Run**. Both layers follow it.
+- **Global** — independent on/off for the crowd heatmap.
+- **Personal** — independent on/off for *your* heatmap.
 - **⏻** — master mute: hides everything at once (your per-layer choices are
   remembered) and brings it all back.
+- **Opacity** slider — one control for both layers.
+- **Export route (GPX)** — drives Mapy's own planner export so you get a GPX of
+  your planned route (import into Garmin Connect or the Wahoo app).
 
 The global and personal layers toggle **independently**, so you can show your
 personal heat on its own, the global heat on its own, both, or neither.
 
-Keyboard: `A` all on/off · `S` cycle sport · `G` global · `F` personal ·
+Keyboard: `A` all on/off · `S` cycle sport · `D` global · `F` personal ·
 `[` / `]` opacity. When planning a route, **⌘-click (Mac) / Ctrl-click (PC)** the
 map to add a point.
 

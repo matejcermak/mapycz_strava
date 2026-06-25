@@ -11,6 +11,7 @@
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
     user-select: none;
     width: max-content;
+    min-width: 236px;
 }
 
 #msh-panel .msh-title {
@@ -88,16 +89,7 @@
 }
 
 #msh-panel .msh-switch--on {
-    background: #4f7cff;
-}
-
-/* per-layer on-colors (match the map): global = orange, personal = blue */
-#msh-panel .msh-switch--global.msh-switch--on {
-    background: #fc5200;
-}
-
-#msh-panel .msh-switch--personal.msh-switch--on {
-    background: #1e90ff;
+    background: #34c759; /* green when on; grey (default) when off */
 }
 
 #msh-panel .msh-knob {
@@ -169,8 +161,15 @@
     color: #15151a;
 }
 
-/* layer toggle rows */
-#msh-panel .msh-row--layer {
+/* layer toggles, side by side: Global left, Personal right */
+#msh-panel .msh-row--layers {
+    justify-content: space-between;
+    gap: 18px;
+}
+
+#msh-panel .msh-layer {
+    display: inline-flex;
+    align-items: center;
     gap: 8px;
 }
 
@@ -184,6 +183,24 @@
 
 #msh-panel .msh-label--personal {
     color: #1e90ff;
+}
+
+/* export route (GPX) button */
+#msh-panel .msh-export {
+    width: 100%;
+    cursor: pointer;
+    border: 0;
+    border-radius: 7px;
+    padding: 7px 9px;
+    font: inherit;
+    font-weight: 700;
+    color: #fff;
+    background: #3a3a40;
+    transition: background 0.15s;
+}
+
+#msh-panel .msh-export:hover {
+    background: #4a4a52;
 }
 
 #msh-panel .msh-keys {

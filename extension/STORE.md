@@ -35,11 +35,11 @@
 **Detailed description**:
 > Plan routes on Mapy.com with Strava's heat on top of the map.
 >
-> • Global heatmap, split by sport — switch between MTB, Gravel, Road, and Run.
+> • Global heatmap, split by sport — switch between Road, MTB, Gravel, and Run.
 > • Your personal heatmap in blue, on top of the global heat — toggle each layer
 >   independently, so you can spot the roads and trails you haven't done yet.
-> • On-map controls plus keyboard shortcuts (A all / S sport / G global / F personal),
->   opacity, fast tile caching.
+> • On-map controls plus keyboard shortcuts (A all / S sport / D global / F personal),
+>   opacity, one-click GPX export of your planned route, fast tile caching.
 >
 > Requires being logged in to Strava in the same browser. The global heatmap above
 > zoom 11 and the personal heatmap require a Strava Subscription. The extension only

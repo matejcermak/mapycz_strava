@@ -28,7 +28,7 @@
         run: "sport_Run",
     };
     const SPORT_LABEL = { mtb: "MTB", gravel: "Gravel", ride: "Road", run: "Run" };
-    const SPORT_ORDER = ["mtb", "gravel", "ride", "run"];
+    const SPORT_ORDER = ["ride", "mtb", "gravel", "run"]; // Road, MTB, Gravel, Run
     const MIN_ZOOM = 0;
     const MAX_ZOOM = 22;
     const GLOBAL_TILE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -666,13 +666,22 @@
                 '<button class="msh-seg" data-sport="' + s + '">' + SPORT_LABEL[s] + "</button>"
             ).join(""),
             "</div>",
-            '<div class="msh-row msh-row--layer">',
-            '  <span class="msh-switch msh-switch--global" data-act="global" role="switch" tabindex="0"><span class="msh-knob"></span></span>',
-            '  <span class="msh-toggle-label msh-label--global">Global</span>',
+            '<div class="msh-row msh-row--layers">',
+            '  <span class="msh-layer">',
+            '    <span class="msh-switch msh-switch--global" data-act="global" role="switch" tabindex="0"><span class="msh-knob"></span></span>',
+            '    <span class="msh-toggle-label msh-label--global">Global</span>',
+            "  </span>",
+            '  <span class="msh-layer">',
+            '    <span class="msh-switch msh-switch--personal" data-act="personal" role="switch" tabindex="0"><span class="msh-knob"></span></span>',
+            '    <span class="msh-toggle-label msh-label--personal">Personal</span>',
+            "  </span>",
             "</div>",
-            '<div class="msh-row msh-row--layer">',
-            '  <span class="msh-switch msh-switch--personal" data-act="personal" role="switch" tabindex="0"><span class="msh-knob"></span></span>',
-            '  <span class="msh-toggle-label msh-label--personal">Personal</span>',
+            '<div class="msh-row msh-op">',
+            '  <span>Opacity</span>',
+            '  <input class="msh-slider" type="range" min="0" max="100" step="10" />',
+            "</div>",
+            '<div class="msh-row">',
+            '  <button class="msh-export" data-act="export">⬇ Export route (GPX)</button>',
             "</div>",
             '<div class="msh-hint"></div>',
         ].join("");
@@ -681,9 +690,13 @@
         panelRoot.querySelector('[data-act="master"]').addEventListener("click", masterToggle);
         panelRoot.querySelector('[data-act="global"]').addEventListener("click", toggleGlobal);
         panelRoot.querySelector('[data-act="personal"]').addEventListener("click", togglePersonal);
+        panelRoot.querySelector('[data-act="export"]').addEventListener("click", exportRoute);
         panelRoot.querySelectorAll(".msh-seg").forEach((b) =>
             b.addEventListener("click", () => setSport(b.getAttribute("data-sport")))
         );
+        const slider = panelRoot.querySelector(".msh-slider");
+        slider.value = String(opacity);
+        slider.addEventListener("input", (e) => setOpacity(parseInt(e.target.value, 10)));
         renderPanel();
     }
 
@@ -707,8 +720,12 @@
         if (p) {
             p.classList.toggle("msh-switch--on", personalOn && !masterOff);
         }
+        const slider = panelRoot.querySelector(".msh-slider");
+        if (slider) {
+            slider.value = String(opacity);
+        }
         if (hint) {
-            const keys = '<span class="msh-keys">A all · S sport · G global · F personal</span>';
+            const keys = '<span class="msh-keys">A all · S sport · D global · F personal</span>';
             const login = athleteId
                 ? ""
                 : '<a href="' + STRAVA_HEATMAP_URL + '" target="_blank" rel="noopener">Log in to Strava ↗</a> to enable personal · ';
@@ -732,7 +749,7 @@
         renderPanel();
         requestRender();
     }
-    // "G" — global heatmap on/off (independent). Toggling while muted un-mutes onto it.
+    // "D" — global heatmap on/off (independent). Toggling while muted un-mutes onto it.
     function toggleGlobal() {
         if (masterOff) {
             masterOff = false;
@@ -778,6 +795,136 @@
             overlayRoot.style.opacity = String(opacity / 100);
         }
         renderPanel();
+    }
+
+    // ---- Route export (GPX) --------------------------------------------------
+    // Drives Mapy.com's own planner Export → GPX UI so Mapy generates and
+    // downloads the file itself. (Content scripts can't hook Mapy's network like
+    // the userscript did, so this is purely DOM-driven.)
+    function elementIsClickable(el) {
+        if (!el) {
+            return false;
+        }
+        const style = window.getComputedStyle(el);
+        if (!style || style.display === "none" || style.visibility === "hidden") {
+            return false;
+        }
+        const rect = el.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+    }
+    function simulateUserClick(el) {
+        if (!el) {
+            return false;
+        }
+        try {
+            el.scrollIntoView({ block: "center", inline: "center" });
+        } catch (_) { /* ignore */ }
+        try {
+            const rect = el.getBoundingClientRect();
+            const x = rect.left + rect.width / 2;
+            const y = rect.top + rect.height / 2;
+            const under = document.elementFromPoint(x, y);
+            const secondary = under && under !== el ? under : null;
+            const mkMouse = (type) => new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y });
+            const mkPointer = (type) =>
+                typeof PointerEvent === "function"
+                    ? new PointerEvent(type, { bubbles: true, cancelable: true, pointerType: "mouse", isPrimary: true, clientX: x, clientY: y })
+                    : null;
+            const events = [mkPointer("pointerdown"), mkMouse("mousedown"), mkPointer("pointerup"), mkMouse("mouseup"), mkMouse("click")].filter(Boolean);
+            for (const ev of events) {
+                el.dispatchEvent(ev);
+                if (secondary) {
+                    secondary.dispatchEvent(ev);
+                }
+            }
+        } catch (_) { /* ignore */ }
+        try {
+            el.click();
+        } catch (_) { /* ignore */ }
+        return true;
+    }
+    function clickFirstElementByText(needles) {
+        const norm = (Array.isArray(needles) ? needles : [needles]).map((t) => String(t || "").toLowerCase()).filter(Boolean);
+        if (!norm.length) {
+            return false;
+        }
+        const candidates = Array.from(document.querySelectorAll("button, a, [role='button'], [type='button']"));
+        for (const el of candidates) {
+            if (!elementIsClickable(el)) {
+                continue;
+            }
+            const text = `${el.textContent || ""} ${el.getAttribute("aria-label") || ""} ${el.getAttribute("title") || ""}`.toLowerCase();
+            if (text.trim() && norm.some((n) => text.includes(n))) {
+                simulateUserClick(el);
+                return true;
+            }
+        }
+        return false;
+    }
+    function clickMapyExportButton() {
+        const direct = document.querySelector("div.icon-action[title='Export'] button");
+        if (elementIsClickable(direct)) {
+            simulateUserClick(direct);
+            return true;
+        }
+        const alt = document.querySelector("div.icon-action[title='Exportovat'] button")
+            || document.querySelector("div.icon-action[title='Stahnout'] button");
+        if (elementIsClickable(alt)) {
+            simulateUserClick(alt);
+            return true;
+        }
+        return clickFirstElementByText(["export", "exportovat", "download", "stáhnout", "stahnout"]);
+    }
+    function clickMapyExportDialogSave() {
+        const span = document.querySelector("span.mymaps-dialog__saveBtnText");
+        const btn = document.querySelector("button.mymaps-dialog__saveBtn") || (span ? span.closest("button,[role='button'],a") : null);
+        if (elementIsClickable(btn)) {
+            simulateUserClick(btn);
+            return true;
+        }
+        if (elementIsClickable(span)) {
+            simulateUserClick(span);
+            return true;
+        }
+        return false;
+    }
+    async function waitForElement(selector, timeoutMs) {
+        const start = Date.now();
+        while (Date.now() - start < (timeoutMs || 1500)) {
+            const el = document.querySelector(selector);
+            if (el) {
+                return el;
+            }
+            // eslint-disable-next-line no-await-in-loop
+            await new Promise((r) => window.setTimeout(r, 50));
+        }
+        return null;
+    }
+    let exportBusy = false;
+    async function exportRoute() {
+        if (exportBusy) {
+            return;
+        }
+        exportBusy = true;
+        try {
+            if (!clickMapyExportButton()) {
+                toast("Plan a route on Mapy first (⌘/Ctrl-click to add points), then Export.");
+                return;
+            }
+            const dialog = await waitForElement("button.mymaps-dialog__saveBtn, span.mymaps-dialog__saveBtnText", 1500);
+            if (!dialog) {
+                toast("Couldn't open Mapy's export dialog — plan a route first, then try again.");
+                return;
+            }
+            await new Promise((r) => window.setTimeout(r, 150));
+            if (clickMapyExportDialogSave()) {
+                toast("Exporting route GPX from Mapy — import it into Garmin Connect or the Wahoo app.");
+            } else {
+                toast("Opened Mapy's export — pick GPX to download.");
+            }
+        } finally {
+            window.setTimeout(() => { exportBusy = false; }, 800);
+        }
     }
 
     // ---- Toast ---------------------------------------------------------------
@@ -832,7 +979,7 @@
                 } else if (key === "s") {
                     event.preventDefault();
                     cycleSport();
-                } else if (key === "g") {
+                } else if (key === "d") {
                     event.preventDefault();
                     toggleGlobal();
                 } else if (key === "f") {
